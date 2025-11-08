@@ -17,7 +17,7 @@
           <button class="card" @click="toModelConfig" aria-label="模型配置">
             <div class="card-main">
               <div class="card-title">模型配置</div>
-              <div class="card-desc">管理模型组、模型及默认选择</div>
+              <div class="card-desc">管理模型组、模型</div>
             </div>
             <div class="card-right">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -28,7 +28,7 @@
           <button class="card" @click="toUserSettings" aria-label="用户设置">
             <div class="card-main">
               <div class="card-title">用户设置</div>
-              <div class="card-desc">编辑个人资料，支持云端轻量同步</div>
+              <div class="card-desc">编辑个人资料</div>
             </div>
             <div class="card-right">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -40,11 +40,11 @@
       </section>
 
       <section class="section">
-        <h2 class="section-title">本地同步（全局）</h2>
+        <h2 class="section-title">本地同步</h2>
         <div class="sync-card">
           <div class="sync-main">
-            <div class="sync-title">导入 / 导出 全局数据</div>
-            <div class="sync-desc">包含「历史记录」与「模型配置」，JSON 格式备份与恢复</div>
+            <div class="sync-title">导入/导出数据</div>
+            <div class="sync-desc">包含全部格式备份与恢复</div>
           </div>
           <div class="sync-actions">
             <button class="accent-btn" @click="exportJSON">导出 JSON</button>
@@ -59,7 +59,7 @@
         <div class="sync-card">
           <div class="sync-main">
             <div class="sync-title">配置与同步</div>
-            <div class="sync-desc">地域与 endpoint 绑定，选择地域自动填充 endpoint；支持增量上传/下载并回退</div>
+            <div class="sync-desc">基于阿里云OSS的云端同步</div>
             <div class="sync-desc">
               <label class="switch">
                 <input type="checkbox" v-model="autoSyncEnabled" @change="onToggleAutoSync" />

@@ -18,6 +18,30 @@ const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
 const isGenerating = ref(false)
 
+// 复制提示（Toast）
+const showCopyToast = ref(false)
+const copyToastText = ref('已复制')
+function showToast(msg: string, timeout = 1500) {
+  copyToastText.value = msg
+  showCopyToast.value = true
+  window.setTimeout(() => { showCopyToast.value = false }, timeout)
+}
+
+// 编辑并重新发送弹窗状态
+const showEditModal = ref(false)
+const editDraft = ref('')
+const editingIndex = ref<number | null>(null)
+function openEdit(index: number, content: string) {
+  editingIndex.value = index
+  editDraft.value = content
+  showEditModal.value = true
+}
+function closeEditModal() {
+  showEditModal.value = false
+  editingIndex.value = null
+  editDraft.value = ''
+}
+
 // 主页右上角同步成功图标（2秒后消失）
 const showSyncOk = ref(false)
 watch(lastSyncSuccessAt, () => {
@@ -146,7 +170,7 @@ function sendMessage() {
 
 function copy(text: string) {
   if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-    navigator.clipboard.writeText(text).catch(() => {})
+    navigator.clipboard.writeText(text).then(() => { showToast('已复制') }).catch(() => {})
   } else {
     // 兜底方案
     const ta = document.createElement('textarea')
@@ -155,6 +179,7 @@ function copy(text: string) {
     ta.select()
     try { document.execCommand('copy') } catch (_) {}
     document.body.removeChild(ta)
+    showToast('已复制')
   }
 }
 
@@ -230,6 +255,96 @@ async function resend(index: number) {
     } catch (e2: any) {
       const cur = chatStore.getActiveChat(); if (cur) {
         const nm = cur.messages[aiIndexNew]
+        nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
+        nm.isError = true
+        nm.timestamp = Date.now()
+      }
+      isGenerating.value = false
+    }
+  }
+}
+
+// 编辑后重新发送：更新指定用户消息，截断其后的所有消息并基于新上下文生成回复
+async function applyEditAndResend() {
+  if (isGenerating.value) return
+  const idx = editingIndex.value
+  if (idx == null) return
+  const active = chatStore.getActiveChat(); if (!active) return
+  const msgs = active.messages
+  if (!msgs || idx < 0 || idx >= msgs.length) return
+  const target = msgs[idx]
+  if (!target.isFromUser) { closeEditModal(); return }
+
+  // 更新文本并刷新时间戳
+  target.content = editDraft.value.trim()
+  target.timestamp = Date.now()
+
+  // 截断其后的全部消息
+  const id = active.id
+  while (active.messages.length > idx + 1) {
+    chatStore.removeMessageAt(id, idx + 1)
+  }
+  chatStore.persistNow()
+
+  // 关闭弹窗，清理状态
+  closeEditModal()
+
+  // 追加新的 AI 占位并开始按上下文重新生成
+  const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now() }
+  chatStore.appendMessage(placeholder)
+  const cur = chatStore.getActiveChat(); if (!cur) return
+  const arr = cur.messages
+  const ctx: ConversationMessage[] = arr.slice(0, Math.max(0, arr.length - 1))
+    .filter(m => !m.isError)
+    .map(m => ({ role: m.isFromUser ? 'user' : 'assistant', content: m.content }))
+  const aiIndex = Math.max(0, arr.length - 1)
+
+  try {
+    isGenerating.value = true
+    await replyStream(ctx, {
+      model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+      groupId: selectedModel.value?.groupId,
+    }, (delta: string) => {
+      const cur2 = chatStore.getActiveChat(); if (!cur2) return
+      const nm = cur2.messages[aiIndex]
+      nm.content += delta
+      nm.timestamp = Date.now()
+      scrollToBottom()
+    })
+    // 自动同步
+    try {
+      const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+      const aid = chatStore.getActiveChat()?.id
+      if (enabled && typeof aid === 'number') {
+        await uploadHistoryRecordAndIndex(aid)
+        markSyncSuccess()
+      }
+    } catch (_) {}
+    isGenerating.value = false
+  } catch (err) {
+    // 非流式整段上下文回退
+    try {
+      const res = await replyConversation(ctx, {
+        model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+        groupId: selectedModel.value?.groupId,
+      })
+      const cur3 = chatStore.getActiveChat(); if (cur3) {
+        const nm = cur3.messages[aiIndex]
+        nm.content = res
+        nm.timestamp = Date.now()
+      }
+      try {
+        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+        const aid = chatStore.getActiveChat()?.id
+        if (enabled && typeof aid === 'number') {
+          await uploadHistoryRecordAndIndex(aid)
+          markSyncSuccess()
+        }
+      } catch (_) {}
+      isGenerating.value = false
+    } catch (e2: any) {
+      const cur4 = chatStore.getActiveChat(); if (cur4) {
+        const nm = cur4.messages[aiIndex]
         nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
         nm.isError = true
         nm.timestamp = Date.now()
@@ -335,12 +450,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             <template v-if="m.isFromUser">
               <div class="bubble-wrap">
                 <div class="bubble">{{ m.content }}</div>
-        <button class="copy-inline" title="复制" @click="copy(m.content)">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-            <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
+        <div class="inline-actions">
+          <button class="edit-inline" aria-label="编辑并重新发送" title="编辑并重新发送" @click="openEdit(i, m.content)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 16l1-4 9-9 4 4-9 9-4 1z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+              <path d="M12 5l4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+            </svg>
+          </button>
+          <button class="copy-inline" aria-label="复制" title="复制" @click="copy(m.content)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+            </svg>
+          </button>
+        </div>
               </div>
             </template>
             <!-- AI 文本：左侧常驻复制按钮（在内容下方靠左） -->
@@ -363,6 +486,17 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             </template>
           </div>
         </div>
+    </div>
+    </div>
+
+    <!-- 复制成功提示 -->
+    <div v-if="showCopyToast" class="toast-layer" aria-live="polite">
+      <div class="toast">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
+          <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>{{ copyToastText }}</span>
       </div>
     </div>
 
@@ -414,6 +548,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         </div>
       </div>
     </div>
+
+    <!-- 编辑消息弹窗 -->
+    <div v-if="showEditModal" class="modal-mask" @click.self="closeEditModal">
+      <div class="modal" role="dialog" aria-modal="true">
+        <div class="modal-title">编辑消息</div>
+        <div class="modal-body">
+          <textarea v-model="editDraft" class="edit-input" rows="6" placeholder="在此修改您的消息"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" @click="closeEditModal">取消</button>
+          <button class="btn primary" @click="applyEditAndResend">更新并重新发送</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -442,7 +590,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 
 .msg { width: 100%; margin-bottom: 24px; }
 .msg.user { text-align: right; }
-.bubble-wrap { display: inline-block; position: relative; max-width: 100%; }
+.bubble-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; max-width: 100%; }
 .bubble {
   display: inline-block;
   max-width: 100%;
@@ -454,11 +602,17 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   word-break: break-word;
 }
 .copy-inline {
-  position: absolute; top: 100%; right: 0; margin-top: 4px;
+  margin-top: 4px;
   border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text);
   opacity: 0; pointer-events: none; transition: opacity 0.15s ease-in-out;
 }
 .bubble-wrap:hover .copy-inline { opacity: 1; pointer-events: auto; }
+
+/* 发送气泡下方的行内操作区域（编辑 / 复制） */
+.inline-actions { margin-top: 4px; display: inline-flex; align-items: center; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 0.15s ease-in-out; }
+.bubble-wrap:hover .inline-actions { opacity: 1; pointer-events: auto; }
+.edit-inline { border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text); display: inline-flex; align-items: center; }
+.edit-inline:hover, .copy-inline:hover { background: var(--hover); }
 
 .text { color: var(--text); white-space: normal; word-break: break-word; }
 .copy-ai {
@@ -539,4 +693,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }
 .btn { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn-bg); cursor: pointer; color: var(--text); }
 .btn:hover { background: var(--hover); }
+
+/* 复制提示样式 */
+.toast-layer { position: fixed; top: 20px; right: 20px; z-index: 40; pointer-events: none; }
+.toast { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: var(--modal-bg); border: 1px solid var(--btn-border); color: var(--text); box-shadow: var(--shadow); }
+
+/* 编辑弹窗输入框及主按钮样式 */
+.edit-input { width: 100%; min-height: 120px; resize: vertical; padding: 10px 12px; border: 1px solid var(--btn-border); border-radius: 10px; background: var(--btn-bg); color: var(--text); }
+.btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+.btn.primary:hover { filter: brightness(1.05); }
 </style>
