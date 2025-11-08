@@ -86,6 +86,35 @@ yarn preview
 pnpm preview
 ```
 
+## OpenAI 接入
+
+项目已改为使用 OpenAI 真实 API。配置步骤：
+
+- 在应用内打开 `设置 → 模型配置`。
+- 新增一个模型组：
+  - 名称：`OpenAI`
+  - Base URL：`https://api.openai.com/v1`
+  - API Key：你的 OpenAI 密钥（形如 `sk-...`）
+  - 官网地址：`https://platform.openai.com/`
+- 在该组下新增模型：
+  - Model：例如 `gpt-4o-mini` 或 `gpt-4o`
+  - 名称：自定义展示名
+- 在聊天页顶部选择刚添加的模型后，即可调用。
+
+实现细节与参考：
+
+- 优先调用 `Responses API`，失败时回退到 `Chat Completions`，以兼容不同模型与版本。[参考：Responses API 文档](https://platform.openai.com/docs/api-reference/responses) [5]
+- 需要实时输出或多段内容可参考官方流式响应指南。[参考：Streaming responses](https://platform.openai.com/docs/guides/streaming-responses) [2]
+- 模型推荐：`GPT‑4o mini` 具备高性价比，适合聊天与通用任务。[参考：官方公告](https://openai.com/index/gpt-4o-mini-advancing-cost-efficient-intelligence/) [4]
+
+用户资料注入：
+
+- “用户设置”中的资料会以系统提示的形式（非强制，仅作上下文）注入到请求中，帮助模型更好地个性化回复。
+
+安全提示：
+
+- 当前为前端直连 OpenAI，API Key 会存在于浏览器环境，适合本地/个人使用。生产环境推荐通过后端代理转发以保护密钥。
+
 ## 许可证
 
 本项目采用 Apache License, Version 2.0 许可证。详情请参阅 [LICENSE](LICENSE) 文件。

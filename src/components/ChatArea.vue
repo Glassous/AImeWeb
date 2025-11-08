@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
-import { reply as mockReply } from '../api/mock'
+import { reply as aiReply, replyStream, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
@@ -69,35 +69,74 @@ function sendMessage() {
   inputText.value = ''
   scrollToBottom()
 
-  // 使用模拟 API 服务回复
-  mockReply(text, {
-    provider: selectedProvider.value || 'mock-provider',
-    model: (selectedModel.value?.modelName || selectedModel.value?.name || 'mock-default'),
+  // 先追加一个 AI 占位消息，用于流式累积内容
+  const placeholder = {
+    content: '',
+    isError: false,
+    isFromUser: false,
+    timestamp: Date.now(),
+  }
+  chatStore.appendMessage(placeholder)
+  scrollToBottom()
+
+  // 构造完整上下文（不含刚追加的空AI占位）
+  const active = chatStore.getActiveChat()
+  const msgs = (active?.messages || [])
+  const ctx: ConversationMessage[] = msgs.slice(0, Math.max(0, msgs.length - 1))
+    .filter(m => !m.isError)
+    .map(m => ({ role: m.isFromUser ? 'user' : 'assistant', content: m.content }))
+
+  const aiIndex = Math.max(0, (active?.messages.length || 1) - 1)
+
+  // 开启流式输出；失败时回退到非流式
+  replyStream(ctx, {
+    model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+    groupId: selectedModel.value?.groupId,
+  }, (delta: string) => {
+    const cur = chatStore.getActiveChat()
+    if (!cur) return
+    const target = cur.messages[aiIndex]
+    target.content += delta
+    target.timestamp = Date.now()
+    scrollToBottom()
   })
-    .then(async res => {
-      chatStore.appendMessage({
-        content: res,
-        isError: false,
-        isFromUser: false,
-        timestamp: Date.now(),
-      })
+    .then(async full => {
+      // 流式完成后，触发自动同步（若开启）
       try {
         const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
         const id = chatStore.getActiveChat()?.id
         if (enabled && typeof id === 'number') {
           await uploadHistoryRecordAndIndex(id)
-          // 上传成功后标记同步成功，右上角显示勾号 2 秒
           markSyncSuccess()
         }
       } catch (_) { /* ignore auto-upload failure */ }
     })
-    .catch(() => {
-      chatStore.appendMessage({
-        content: '（模拟服务）请求失败',
-        isError: true,
-        isFromUser: false,
-        timestamp: Date.now(),
-      })
+    .catch(async (err) => {
+      // 回退：非流式一次性请求
+      try {
+        const res = await aiReply(text, {
+          model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+          groupId: selectedModel.value?.groupId,
+        })
+        const cur = chatStore.getActiveChat()
+        if (cur) {
+          cur.messages[aiIndex].content = res
+          cur.messages[aiIndex].timestamp = Date.now()
+        }
+        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+        const id = chatStore.getActiveChat()?.id
+        if (enabled && typeof id === 'number') {
+          await uploadHistoryRecordAndIndex(id)
+          markSyncSuccess()
+        }
+      } catch (e2) {
+        const cur = chatStore.getActiveChat()
+        if (cur) {
+          cur.messages[aiIndex].content = `OpenAI 请求失败：${(err && err.message) ? err.message : '未知错误'}`
+          cur.messages[aiIndex].isError = true
+          cur.messages[aiIndex].timestamp = Date.now()
+        }
+      }
     })
     .finally(() => scrollToBottom())
 }
