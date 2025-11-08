@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
-import { reply as aiReply, replyStream, type ConversationMessage } from '../api/openai'
+import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
@@ -16,6 +16,7 @@ const activeChat = computed(() => chatStore.getActiveChat())
 const inputText = ref('')
 const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
+const isGenerating = ref(false)
 
 // 主页右上角同步成功图标（2秒后消失）
 const showSyncOk = ref(false)
@@ -57,6 +58,7 @@ function scrollToBottom() {
 }
 
 function sendMessage() {
+  if (isGenerating.value) return
   const text = inputText.value.trim()
   if (!text) return
   const now = Date.now()
@@ -89,6 +91,7 @@ function sendMessage() {
   const aiIndex = Math.max(0, (active?.messages.length || 1) - 1)
 
   // 开启流式输出；失败时回退到非流式
+  isGenerating.value = true
   replyStream(ctx, {
     model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
     groupId: selectedModel.value?.groupId,
@@ -138,7 +141,7 @@ function sendMessage() {
         }
       }
     })
-    .finally(() => scrollToBottom())
+    .finally(() => { isGenerating.value = false; scrollToBottom() })
 }
 
 function copy(text: string) {
@@ -152,6 +155,87 @@ function copy(text: string) {
     ta.select()
     try { document.execCommand('copy') } catch (_) {}
     document.body.removeChild(ta)
+  }
+}
+
+// 重新发送指定 AI 回复：基于该条之前的完整上下文重试，完成后删除旧记录
+async function resend(index: number) {
+  if (isGenerating.value) return
+  const active = chatStore.getActiveChat()
+  if (!active) return
+  const msgs = active.messages
+  if (!msgs || index < 0 || index >= msgs.length) return
+  const target = msgs[index]
+  if (target.isFromUser) return // 仅对 AI 消息提供“重新发送”
+
+  // 构造上下文：仅取到旧 AI 回复之前的消息
+  const ctx: ConversationMessage[] = msgs.slice(0, index)
+    .filter(m => !m.isError)
+    .map(m => ({ role: m.isFromUser ? 'user' : 'assistant', content: m.content }))
+
+  // 立刻删除旧记录，并在相同位置插入新的占位
+  const id = chatStore.getActiveChat()?.id
+  if (typeof id === 'number') {
+    chatStore.removeMessageAt(id, index)
+    const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now() }
+    chatStore.insertMessageAt(id, index, placeholder)
+    chatStore.persistNow()
+  }
+  const aiIndexNew = index
+
+  // 首选流式重试；失败回退到非流式整段上下文
+  try {
+    isGenerating.value = true
+    const full = await replyStream(ctx, {
+      model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+      groupId: selectedModel.value?.groupId,
+    }, (delta: string) => {
+      const cur = chatStore.getActiveChat(); if (!cur) return
+      const nm = cur.messages[aiIndexNew]
+      nm.content += delta
+      nm.timestamp = Date.now()
+      scrollToBottom()
+    })
+    // 自动同步
+    try {
+      const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+      const aid = chatStore.getActiveChat()?.id
+      if (enabled && typeof aid === 'number') {
+        await uploadHistoryRecordAndIndex(aid)
+        markSyncSuccess()
+      }
+    } catch (_) {}
+    isGenerating.value = false
+  } catch (err) {
+    // 非流式整段上下文回退
+    try {
+      const res = await replyConversation(ctx, {
+        model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
+        groupId: selectedModel.value?.groupId,
+      })
+      const cur = chatStore.getActiveChat(); if (cur) {
+        const nm = cur.messages[aiIndexNew]
+        nm.content = res
+        nm.timestamp = Date.now()
+      }
+      try {
+        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+        const aid = chatStore.getActiveChat()?.id
+        if (enabled && typeof aid === 'number') {
+          await uploadHistoryRecordAndIndex(aid)
+          markSyncSuccess()
+        }
+      } catch (_) {}
+      isGenerating.value = false
+    } catch (e2: any) {
+      const cur = chatStore.getActiveChat(); if (cur) {
+        const nm = cur.messages[aiIndexNew]
+        nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
+        nm.isError = true
+        nm.timestamp = Date.now()
+      }
+      isGenerating.value = false
+    }
   }
 }
 
@@ -262,12 +346,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             <!-- AI 文本：左侧常驻复制按钮（在内容下方靠左） -->
             <template v-else>
               <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
-              <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                  <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                </svg>
-              </button>
+              <div class="actions">
+                <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                    <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                  </svg>
+                </button>
+                <button class="resend-ai" aria-label="重新发送" title="重新发送该条回复" @click="resend(i)">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 5a7 7 0 1 1-6.9 8.3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                    <path d="M7 4v4h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+              </div>
             </template>
           </div>
         </div>
@@ -280,9 +372,18 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         class="input"
         placeholder="输入消息，按下发送"
         rows="1"
-        @keydown.enter.exact.prevent="sendMessage"
+        @keydown.enter.exact.prevent="!isGenerating && sendMessage()"
       ></textarea>
-      <button class="send-btn" @click="sendMessage">发送</button>
+      <button class="send-btn" :disabled="isGenerating" @click="sendMessage">
+        <span v-if="!isGenerating">发送</span>
+        <span class="loading" v-else>
+          <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity="0.25"/>
+            <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          正在回复…
+        </span>
+      </button>
     </footer>
 
     <!-- 模型选择弹窗 -->
@@ -348,6 +449,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding: 10px 12px;
   border-radius: 12px;
   background: var(--bubble-user-bg);
+  text-align: left; /* 保证换行后每行左对齐，避免右对齐问题 */
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -363,7 +465,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   margin-top: 6px; display: inline-flex; align-items: center;
   border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text);
 }
+.resend-ai {
+  margin-top: 6px; display: inline-flex; align-items: center;
+  border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text);
+}
+.actions { display: flex; gap: 6px; align-items: center; }
 .copy-ai:hover, .copy-inline:hover { background: var(--hover); }
+.resend-ai:hover { background: var(--hover); }
 
 .error .bubble { background: var(--error-bg); }
 
@@ -375,6 +483,10 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .send-btn { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--btn-border); background: var(--btn-bg); cursor: pointer; color: var(--text); }
 .send-btn:hover { background: var(--hover); }
+.send-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+.loading { display: inline-flex; align-items: center; gap: 6px; }
+.spin { animation: spin 0.9s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 /* Markdown 基础样式（仅用于 AI 文本区域） */
 .markdown p { margin: 0 0 8px; }

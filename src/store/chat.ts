@@ -159,6 +159,29 @@ export function deleteChat(id: number) {
   persist()
 }
 
+// ===== 扩展：按索引删除消息并持久化（用于“重新发送”后移除旧回复） =====
+export function removeMessageAt(chatId: number, index: number) {
+  const r = state.histories.find(h => h.id === chatId)
+  if (!r) return
+  if (index < 0 || index >= r.messages.length) return
+  r.messages.splice(index, 1)
+  r.updatedAt = r.messages.length ? r.messages[r.messages.length - 1].timestamp : Date.now()
+  persist()
+}
+
+// 暴露一次显式持久化（用于批量更新或流式写入结束时保存）
+export function persistNow() { persist() }
+
+// 在指定索引插入消息（用于“重新发送”占位）
+export function insertMessageAt(chatId: number, index: number, msg: ChatMessage) {
+  const r = state.histories.find(h => h.id === chatId)
+  if (!r) return
+  const i = Math.max(0, Math.min(index, r.messages.length))
+  r.messages.splice(i, 0, msg)
+  r.updatedAt = msg.timestamp
+  persist()
+}
+
 // 初始化：加载或创建示例记录
 loadFromLocalStorage()
 
@@ -172,6 +195,9 @@ export const chatStore = {
   appendMessage,
   renameChat,
   deleteChat,
+  removeMessageAt,
+  insertMessageAt,
+  persistNow,
 }
 
 // ===== 新增：导入/导出历史记录（用于全局同步） =====

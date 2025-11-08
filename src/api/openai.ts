@@ -109,6 +109,59 @@ export async function reply(message: string, options: OpenAIReplyOptions = {}): 
   return typeof json2?.choices?.[0]?.message?.content === 'string' ? json2.choices[0].message.content : JSON.stringify(json2)
 }
 
+// 非流式：基于整段上下文的重试（优先 Responses，失败回退 Chat Completions）
+export async function replyConversation(
+  conversation: { role: 'user' | 'assistant' | 'system'; content: string }[],
+  options: OpenAIReplyOptions = {},
+): Promise<string> {
+  const { getGroupById, modelConfig } = await import('../store/modelConfig')
+  const { buildUserProfileSystemMessage } = await import('../store/userProfile')
+  const groupId = options.groupId || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.groupId || '')
+  const group = groupId ? getGroupById(groupId) : undefined
+  const baseUrl = stripTrailingSlashes(group?.baseUrl || 'https://api.openai.com/v1')
+  const apiKey = group?.apiKey || ''
+  if (!apiKey) throw new Error('未配置 API Key，请在“模型配置”中填写。')
+  const model = options.model || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.modelName || '')
+  if (!model) throw new Error('未选择模型或模型名为空。')
+
+  const sys = buildUserProfileSystemMessage()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${apiKey}`,
+  }
+
+  // 1) 先尝试 Responses 非流式
+  try {
+    const input = [] as any[]
+    if (sys && sys.trim()) input.push({ role: 'system', content: [{ type: 'input_text', text: sys }] })
+    for (const m of conversation) {
+      input.push({ role: m.role, content: [{ type: 'input_text', text: m.content }] })
+    }
+    const body = { model, input }
+    const resp = await fetch(`${baseUrl}/responses`, { method: 'POST', headers, body: JSON.stringify(body) })
+    if (!resp.ok) throw new Error(await readError(resp))
+    const json = await resp.json()
+    const text = extractTextFromResponse(json)
+    if (text && text.trim()) return text
+    throw new Error('Responses 返回内容为空')
+  } catch (_) {
+    // 继续回退到 Chat Completions
+  }
+
+  // 2) Chat Completions 非流式
+  const messages: any[] = []
+  if (sys && sys.trim()) messages.push({ role: 'system', content: sys })
+  for (const m of conversation) messages.push({ role: m.role === 'system' ? 'system' : (m.role === 'assistant' ? 'assistant' : 'user'), content: m.content })
+  const resp2 = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST', headers, body: JSON.stringify({ model, messages })
+  })
+  if (!resp2.ok) throw new Error(await readError(resp2))
+  const json2 = await resp2.json()
+  const text2 = extractTextFromResponse(json2)
+  if (text2 && text2.trim()) return text2
+  return typeof json2?.choices?.[0]?.message?.content === 'string' ? json2.choices[0].message.content : JSON.stringify(json2)
+}
+
 export type ConversationMessage = { role: 'user' | 'assistant' | 'system'; content: string }
 
 function toChatCompletionMessages(conv: ConversationMessage[], sys: string | null): any[] {
