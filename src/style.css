@@ -1,0 +1,57 @@
+:root {
+  /* 初始为浅色，实际由 data-theme 控制 */
+  --bg: #fff;
+  --text: #222;
+  --muted: #767678;
+  --border: #e5e5e6;
+  --subtle: #f7f7f8;
+  --hover: #f2f2f3;
+  --btn-bg: #fff;
+  --btn-border: #d9d9da;
+  --bubble-user-bg: #e9eefc;
+  --bubble-ai-bg: transparent;
+  --error-bg: #ffe7e7;
+  --mask: rgba(0,0,0,0.15);
+  --shadow: 0 10px 24px rgba(0,0,0,0.12);
+  --modal-bg: #ffffff; /* 纯白弹窗背景（浅色） */
+  /* 主题强调色 */
+  --primary: #3b82f6;   /* 亮蓝，用于主按钮背景 */
+  --accent: #6b4fd3;    /* 高档紫（皇家紫），用于导出等强调 */
+  --success: #2bb673;   /* 高档绿（翡翠绿），用于导入/成功 */
+  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+/* 统一盒模型，防止元素宽度因 padding/border 溢出 */
+*, *::before, *::after { box-sizing: border-box; }
+
+:root[data-theme='dark'] {
+  --bg: #121212;
+  --text: #eaeaea;
+  --muted: #a1a1a1;
+  --border: #2a2a2a;
+  --subtle: #0f0f10;
+  --hover: #1e1e1f;
+  --btn-bg: #1a1a1b;
+  --btn-border: #333;
+  --bubble-user-bg: #1b2a4a;
+  --bubble-ai-bg: transparent;
+  --error-bg: #3b1f1f;
+  --mask: rgba(0,0,0,0.35);
+  --shadow: 0 10px 24px rgba(0,0,0,0.35);
+  --modal-bg: #000000; /* 纯黑弹窗背景（深色） */
+  /* 深色模式下的强调色（保持对比与可读性） */
+  --primary: #60a5fa;   /* 稍微提亮的蓝 */
+  --accent: #8f74ff;    /* 深色模式下的高档紫（略提亮） */
+  --success: #3fd79a;   /* 深色模式下的高档绿（略提亮） */
+}
+
+html, body, #app { height: 100%; }
+body { margin: 0; color: var(--text); background: var(--bg); }
+
+button { font-family: inherit; }
+textarea { font-family: inherit; }
+
+/* 通用滚动条样式，贴近 ChatGPT */
+* { scrollbar-width: thin; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
