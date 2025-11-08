@@ -113,25 +113,21 @@ function createClient() {
 
 async function getText(key: string): Promise<string> {
   const client = createClient()
+  // 优先使用签名 URL，规避 Authorization 头导致的 CORS 预检问题
   try {
+    const url = (client as any).signatureUrl(key, { expires: 120 })
+    const resp = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
+    if (!resp.ok) throw new Error(`签名URL下载失败：HTTP ${resp.status}`)
+    const buf = await resp.arrayBuffer()
+    const text = new TextDecoder().decode(buf)
+    return text
+  } catch (e: any) {
+    // 回退：直接使用 SDK 的 get（在已正确配置 CORS 且允许 Authorization 时可用）
     const res: any = await client.get(key)
-    // Browser returns ArrayBuffer
     const content = res && (res.content || res.data)
     if (!content) throw new Error('下载失败或无内容')
     const text = typeof content === 'string' ? content : new TextDecoder().decode(content as ArrayBuffer)
     return text
-  } catch (e: any) {
-    // 某些环境下直接 GET 可能因防盗链/CORS/权限策略返回 403；尝试签名 URL 作为兜底
-    try {
-      const url = (client as any).signatureUrl(key, { expires: 60 })
-      const resp = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
-      if (!resp.ok) throw new Error(`签名URL下载失败：HTTP ${resp.status}`)
-      const buf = await resp.arrayBuffer()
-      const text = new TextDecoder().decode(buf)
-      return text
-    } catch (_) {
-      throw e
-    }
   }
 }
 
