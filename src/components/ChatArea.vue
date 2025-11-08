@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
 import { reply as mockReply } from '../api/mock'
 import { themeStore } from '../store/theme'
 import { modelConfig, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
+import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
@@ -115,9 +116,24 @@ function copy(text: string) {
   }
 }
 
+// 事件委托：处理代码块复制按钮点击
+function onMessageClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target) return
+  const btn = target.closest('.code-copy-btn') as HTMLElement | null
+  if (btn) {
+    const wrapper = btn.parentElement
+    const codeEl = wrapper?.querySelector('pre > code') as HTMLElement | null
+    const codeText = codeEl?.textContent || ''
+    copy(codeText)
+  }
+}
+
 // 首次进入主页时显示“新对话”状态
 onMounted(() => {
   chatStore.startDraft()
+  // 绑定点击事件，用于复制代码块
+  try { messagesEl.value?.addEventListener('click', onMessageClick) } catch (_) {}
   try {
     const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
     if (enabled) {
@@ -133,6 +149,10 @@ onMounted(() => {
         .catch(() => {})
     }
   } catch (_) {}
+})
+
+onUnmounted(() => {
+  try { messagesEl.value?.removeEventListener('click', onMessageClick) } catch (_) {}
 })
 
 // 切换会话或消息变动时滚到底
@@ -202,7 +222,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             </template>
             <!-- AI 文本：左侧常驻复制按钮（在内容下方靠左） -->
             <template v-else>
-              <div class="text">{{ m.content }}</div>
+              <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
               <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
@@ -299,7 +319,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .bubble-wrap:hover .copy-inline { opacity: 1; pointer-events: auto; }
 
-.text { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.text { color: var(--text); white-space: normal; word-break: break-word; }
 .copy-ai {
   margin-top: 6px; display: inline-flex; align-items: center;
   border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text);
@@ -316,6 +336,41 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .send-btn { padding: 10px 16px; border-radius: 10px; border: 1px solid var(--btn-border); background: var(--btn-bg); cursor: pointer; color: var(--text); }
 .send-btn:hover { background: var(--hover); }
+
+/* Markdown 基础样式（仅用于 AI 文本区域） */
+.markdown p { margin: 0 0 8px; }
+.markdown ul, .markdown ol { margin: 0 0 8px; padding-left: 1.25em; }
+.markdown li { margin: 4px 0; }
+.markdown a { color: var(--primary); text-decoration: underline; }
+.markdown blockquote {
+  margin: 0 0 8px; padding-left: 10px; border-left: 3px solid var(--btn-border);
+  color: var(--muted);
+}
+.markdown code {
+  background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 6px;
+  padding: 2px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 0.92em;
+}
+.markdown pre {
+  background: var(--btn-bg); border: 1px solid var(--btn-border); border-radius: 8px;
+  padding: 10px; overflow: auto; margin: 0 0 10px;
+}
+.markdown pre code { border: none; padding: 0; background: transparent; font-size: 0.9em; display: block; }
+
+/* 代码块复制按钮 */
+.markdown .code-block { position: relative; }
+.markdown .code-copy-btn {
+  position: absolute; top: 6px; right: 8px;
+  padding: 2px 8px; border-radius: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border);
+  color: var(--text); cursor: pointer; font-size: 12px; line-height: 20px;
+  opacity: 0.6; transition: opacity 0.15s ease-in-out;
+}
+.markdown .code-block:hover .code-copy-btn { opacity: 1; }
+
+/* 表格线条样式 */
+.markdown table { width: 100%; border-collapse: collapse; margin: 8px 0; }
+.markdown th, .markdown td { border: 1px solid var(--btn-border); padding: 6px 8px; }
+.markdown thead th { background: var(--hover); }
 
 /* 模态框样式（采用全局白/黑背景变量） */
 .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,0.28); display: flex; align-items: center; justify-content: center; z-index: 20; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
