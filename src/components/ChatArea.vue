@@ -4,6 +4,7 @@ import { chatStore } from '../store/chat'
 import { reply as mockReply } from '../api/mock'
 import { themeStore } from '../store/theme'
 import { modelConfig, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
+import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
 
 const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
@@ -14,6 +15,13 @@ const activeChat = computed(() => chatStore.getActiveChat())
 const inputText = ref('')
 const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
+
+// 主页右上角同步成功图标（2秒后消失）
+const showSyncOk = ref(false)
+watch(lastSyncSuccessAt, () => {
+  showSyncOk.value = true
+  window.setTimeout(() => { showSyncOk.value = false }, 2000)
+})
 
 // 当前选择模型信息
 const selectedModel = computed(() => {
@@ -65,13 +73,22 @@ function sendMessage() {
     provider: selectedProvider.value || 'mock-provider',
     model: (selectedModel.value?.modelName || selectedModel.value?.name || 'mock-default'),
   })
-    .then(res => {
+    .then(async res => {
       chatStore.appendMessage({
         content: res,
         isError: false,
         isFromUser: false,
         timestamp: Date.now(),
       })
+      try {
+        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+        const id = chatStore.getActiveChat()?.id
+        if (enabled && typeof id === 'number') {
+          await uploadHistoryRecordAndIndex(id)
+          // 上传成功后标记同步成功，右上角显示勾号 2 秒
+          markSyncSuccess()
+        }
+      } catch (_) { /* ignore auto-upload failure */ }
     })
     .catch(() => {
       chatStore.appendMessage({
@@ -101,6 +118,21 @@ function copy(text: string) {
 // 首次进入主页时显示“新对话”状态
 onMounted(() => {
   chatStore.startDraft()
+  try {
+    const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+    if (enabled) {
+      // 先比对ID表，只有不同才触发下载，减少流量
+      checkIndexDiff()
+        .then(diff => {
+          if (diff.ok && (diff.added > 0 || diff.removed > 0)) {
+            return mirrorLocalWithCloud()
+          }
+          return { ok: false, message: '无需同步', added: 0, removed: 0 }
+        })
+        .then(res => { if ((res as any).ok) markSyncSuccess() })
+        .catch(() => {})
+    }
+  } catch (_) {}
 })
 
 // 切换会话或消息变动时滚到底
@@ -136,6 +168,12 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
           <path d="M20 12a8 8 0 1 1-8-8 6 6 0 0 0 8 8z" fill="currentColor"/>
         </svg>
       </button>
+      <div class="sync-ok" v-show="showSyncOk" title="同步完成">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
+          <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
     </header>
 
     <div class="scroll" ref="messagesEl">
@@ -235,6 +273,8 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .spacer { flex: 1; }
 .theme-btn { border: none; background: transparent; cursor: pointer; padding: 0; border-radius: 8px; width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
 .theme-btn:hover { background: var(--hover); }
+.sync-ok { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
+.sync-ok svg { display: block; }
 
 .scroll { flex: 1; overflow-y: auto; background: var(--bg); width: 100%; }
 .messages { padding: 20px; max-width: 860px; margin: 0 auto; }

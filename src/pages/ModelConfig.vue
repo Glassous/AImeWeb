@@ -123,7 +123,8 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { modelConfig, addGroup, updateGroup, removeGroup, addModel, updateModel, removeModel, getGroupById, getModelsByGroup } from '../store/modelConfig'
+import { modelConfig, addGroup, updateGroup, removeGroup, addModel, updateModel, removeModel, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
+import { autoSyncEnabled, uploadModelConfigOnly } from '../store/oss'
 
 const router = useRouter()
 const cfg = modelConfig.value
@@ -220,6 +221,20 @@ function doConfirmDelete() {
   }
   showConfirm.value = false
 }
+
+// 自动上传：模型配置保存后进行轻量上传（去抖）
+let _uploadTimer: number | null = null
+import { watch } from 'vue'
+watch(() => modelConfig.value.exportedAt, () => {
+  try {
+    const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+    if (!enabled) return
+    if (_uploadTimer) window.clearTimeout(_uploadTimer)
+    _uploadTimer = window.setTimeout(async () => {
+      try { await uploadModelConfigOnly() } catch (_) {}
+    }, 800)
+  } catch (_) {}
+})
 </script>
 
 <style scoped>

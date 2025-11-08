@@ -6,6 +6,14 @@ import { modelConfig, exportConfig, replaceConfig } from './modelConfig'
 import { exportGlobal, importGlobal, parseWithCompatibility } from './sync'
 import { userProfile, exportProfile, replaceProfile } from './userProfile'
 
+// 进度上报类型（供页面展示）
+export interface SyncProgress {
+  current: number
+  total: number
+  percent: number
+  label: string
+}
+
 export interface OssConfig {
   region: string
   endpoint: string
@@ -67,6 +75,21 @@ function loadConfig(): OssConfig {
 }
 
 export const ossConfig = ref<OssConfig>(loadConfig())
+
+// 自动同步开关
+const AUTO_SYNC_LS_KEY = 'aime.oss.autoSync'
+function loadAutoSync(): boolean {
+  try { return localStorage.getItem(AUTO_SYNC_LS_KEY) === '1' } catch { return false }
+}
+export const autoSyncEnabled = ref<boolean>(loadAutoSync())
+export function saveAutoSyncEnabled(v: boolean) {
+  autoSyncEnabled.value = !!v
+  try { localStorage.setItem(AUTO_SYNC_LS_KEY, autoSyncEnabled.value ? '1' : '0') } catch {}
+}
+
+// 全局同步成功信号（主页右上角短暂显示）
+export const lastSyncSuccessAt = ref<number>(0)
+export function markSyncSuccess() { lastSyncSuccessAt.value = Date.now() }
 
 export function saveOssConfig() {
   localStorage.setItem(LS_KEY, JSON.stringify(ossConfig.value))
@@ -188,7 +211,7 @@ function diffIndex(local: HistoryIndex, remote: HistoryIndex | null): { toUpload
 }
 
 // ===== 上传与下载（增量 → 回退）
-export async function uploadIncremental(): Promise<{ ok: boolean; message: string }> {
+export async function uploadIncremental(progress?: (p: SyncProgress) => void): Promise<{ ok: boolean; message: string }> {
   try {
     const localIndex = buildHistoryIndex()
     let remoteIndex: HistoryIndex | null = null
@@ -201,20 +224,32 @@ export async function uploadIncremental(): Promise<{ ok: boolean; message: strin
 
     const { toUpload, toDeleteRemote } = diffIndex(localIndex, remoteIndex)
 
+    // 计算总步数：模型配置 + 用户资料 + 删除远端 + 上传记录 + 上传索引
+    const total = 1 + 1 + toDeleteRemote.length + toUpload.length + 1
+    let done = 0
+    const emit = (label: string) => {
+      const percent = total > 0 ? Math.round((done / total) * 100) : 0
+      progress?.({ current: done, total, percent, label })
+    }
+    emit('准备增量上传…')
+
     // 4) 上传模型配置（始终覆盖）
     const mc = exportConfig()
     mc.exportedAt = Date.now()
     await putJson('AIme/model_config.json', mc)
+    done += 1; emit('上传模型配置')
 
     // 4.1) 用户资料（轻量单文件覆盖上传，不参与索引）
     try {
       const up = exportProfile()
       await putJson('AIme/user_profile.json', up)
     } catch (_) { /* 忽略用户资料上传失败 */ }
+    done += 1; emit('上传用户资料（可选）')
 
     // 5) 删除远端多余记录
     for (const id of toDeleteRemote) {
       await deleteObject(`AIme/history/${id}.json`)
+      done += 1; emit(`删除远端记录 #${id}`)
     }
 
     // 6) 上传变更记录
@@ -224,10 +259,15 @@ export async function uploadIncremental(): Promise<{ ok: boolean; message: strin
       const rec = mapById.get(id)
       if (!rec) continue
       await putJson(`AIme/history/${id}.json`, rec)
+      done += 1; emit(`上传历史记录 #${id}`)
     }
 
     // 7) 最后上传最新索引
     await putJson('AIme/history/index.json', localIndex)
+    done += 1; emit('上传索引')
+
+    // 完成：保证进度到 100%
+    progress?.({ current: total, total, percent: 100, label: '上传完成' })
 
     return { ok: true, message: '增量上传成功' }
   } catch (e: any) {
@@ -235,23 +275,39 @@ export async function uploadIncremental(): Promise<{ ok: boolean; message: strin
     try {
       const backup = exportGlobal()
       await putJson('AImeBackup.json', backup)
+      progress?.({ current: 1, total: 1, percent: 100, label: '回退为单文件备份并上传完成' })
       return { ok: true, message: '增量上传异常，已回退为单文件备份上传' }
     } catch (e2: any) {
+      progress?.({ current: 1, total: 1, percent: 100, label: '上传失败' })
       return { ok: false, message: '上传失败：' + (e2?.message || e?.message || '未知错误') }
     }
   }
 }
 
-export async function downloadAndImport(): Promise<{ ok: boolean; message: string }> {
+export async function downloadAndImport(progress?: (p: SyncProgress) => void): Promise<{ ok: boolean; message: string }> {
   // 优先增量
   try {
+    let done = 0
+    let total = 0
+    const emit = (label: string) => {
+      const percent = total > 0 ? Math.round((done / total) * 100) : 0
+      progress?.({ current: done, total, percent, label })
+    }
+    emit('准备增量下载…')
+
     // 1) 用户资料（可选，若存在则优先导入；失败忽略）
     try {
       const up = await getJson<any>('AIme/user_profile.json')
       replaceProfile(up)
     } catch (_) { /* ignore */ }
+    done += 1
 
     const index = await getJson<HistoryIndex>('AIme/history/index.json')
+    done += 1
+    // 预估总步数：用户资料 + 下载索引 + 模型配置 + 逐条记录 + 应用历史
+    // 模型配置尝试算作一步
+    total = 1 /* user */ + 1 /* index */ + 1 /* model */ + index.items.length /* records */ + 1 /* apply */
+    emit('索引已下载，开始导入…')
     // 2) 模型配置
     try {
       const mc = await getJson<any>('AIme/model_config.json')
@@ -260,6 +316,7 @@ export async function downloadAndImport(): Promise<{ ok: boolean; message: strin
     } catch (e) {
       // 忽略模型配置失败继续
     }
+    done += 1; emit('导入模型配置（可选）')
     // 3) 用户资料（可选）——当前端未集成，忽略读取失败
     // 4) 遍历索引条目下载记录并覆盖导入
     const list: ChatRecord[] = []
@@ -270,9 +327,13 @@ export async function downloadAndImport(): Promise<{ ok: boolean; message: strin
       } catch (e) {
         // 单条失败：跳过该条
       }
+      done += 1; emit(`下载历史记录 #${it.id}`)
     }
     const histRes = replaceHistories(list)
     if (!histRes.ok) throw new Error(histRes.error || '历史记录导入失败')
+    done += 1; emit('应用历史记录')
+
+    progress?.({ current: total, total, percent: 100, label: '下载并导入完成' })
 
     return { ok: true, message: '增量下载并导入成功' }
   } catch (e: any) {
@@ -281,10 +342,81 @@ export async function downloadAndImport(): Promise<{ ok: boolean; message: strin
       const data = await getJson<any>('AImeBackup.json')
       const res = importGlobal(data)
       if (!res.ok) throw new Error(res.error || '单文件备份导入失败')
+      progress?.({ current: 1, total: 1, percent: 100, label: '索引缺失，已回退为单文件备份导入' })
       return { ok: true, message: '索引缺失或异常，已回退为单文件备份导入' }
     } catch (e2: any) {
+      progress?.({ current: 1, total: 1, percent: 100, label: '下载/导入失败' })
       return { ok: false, message: '下载/导入失败：' + (e2?.message || e?.message || '未知错误') }
     }
+  }
+}
+
+// ===== 辅助：仅上传单条历史记录 + 更新索引 =====
+export async function uploadHistoryRecordAndIndex(id: number): Promise<{ ok: boolean; message: string }> {
+  try {
+    const histories = exportHistories()
+    const rec = histories.find(h => h.id === id)
+    if (!rec) return { ok: false, message: '未找到本地记录：' + id }
+    await putJson(`AIme/history/${id}.json`, rec)
+    const index = buildHistoryIndex()
+    await putJson('AIme/history/index.json', index)
+    return { ok: true, message: `已上传记录 #${id} 并更新索引` }
+  } catch (e: any) {
+    return { ok: false, message: '上传失败：' + (e?.message || '未知错误') }
+  }
+}
+
+// ===== 辅助：仅上传模型配置 =====
+export async function uploadModelConfigOnly(): Promise<{ ok: boolean; message: string }> {
+  try {
+    const mc = exportConfig()
+    mc.exportedAt = Date.now()
+    await putJson('AIme/model_config.json', mc)
+    return { ok: true, message: '模型配置已上传' }
+  } catch (e: any) {
+    return { ok: false, message: '上传失败：' + (e?.message || '未知错误') }
+  }
+}
+
+// ===== 自动镜像：以云端索引为准对齐本地 =====
+export async function mirrorLocalWithCloud(): Promise<{ ok: boolean; message: string; added: number; removed: number }> {
+  try {
+    const remote = await getJson<HistoryIndex>('AIme/history/index.json')
+    const localList = exportHistories()
+    const localIds = new Set(localList.map(h => h.id))
+    const remoteIds = new Set(remote.items.map(i => i.id))
+
+    const toAdd = remote.items.filter(i => !localIds.has(i.id)).map(i => i.id)
+    const toRemove = localList.filter(h => !remoteIds.has(h.id)).map(h => h.id)
+
+    const addedRecords: ChatRecord[] = []
+    for (const id of toAdd) {
+      try {
+        const rec = await getJson<ChatRecord>(`AIme/history/${id}.json`)
+        addedRecords.push(rec)
+      } catch (_) { /* 单条失败忽略 */ }
+    }
+    const finalList = localList.filter(h => remoteIds.has(h.id)).concat(addedRecords)
+    const res = replaceHistories(finalList)
+    if (!res.ok) return { ok: false, message: res.error || '本地替换失败', added: addedRecords.length, removed: toRemove.length }
+    return { ok: true, message: `自动同步完成：下载 ${addedRecords.length} 条，删除 ${toRemove.length} 条`, added: addedRecords.length, removed: toRemove.length }
+  } catch (e: any) {
+    return { ok: false, message: '自动同步失败：' + (e?.message || '未知错误'), added: 0, removed: 0 }
+  }
+}
+
+// 仅比较ID表差异，用于决定是否需要触发下载，避免不必要流量
+export async function checkIndexDiff(): Promise<{ ok: boolean; added: number; removed: number }> {
+  try {
+    const remote = await getJson<HistoryIndex>('AIme/history/index.json')
+    const localList = exportHistories()
+    const localIds = new Set(localList.map(h => h.id))
+    const remoteIds = new Set(remote.items.map(i => i.id))
+    const added = remote.items.filter(i => !localIds.has(i.id)).length
+    const removed = localList.filter(h => !remoteIds.has(h.id)).length
+    return { ok: true, added, removed }
+  } catch (e: any) {
+    return { ok: false, added: 0, removed: 0 }
   }
 }
 

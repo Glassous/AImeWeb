@@ -39,39 +39,16 @@ function loadFromLocalStorage() {
   } catch (_) {
     // ignore
   }
-  seedSample()
+  // 初始化为空历史，不再注入预设示例
+  state.histories = []
+  state.activeId = null
 }
 
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.histories))
 }
 
-function seedSample() {
-  const sample: ChatRecord = {
-    createdAt: 1761718724409,
-    id: 3494,
-    messages: [
-      {
-        content: '美元，美分，那毛呢，美毛？',
-        isError: false,
-        isFromUser: true,
-        timestamp: 1761718724409,
-      },
-      {
-        content:
-          '“毛”是中文里对“角”的口语说法，等于0.1元（1元 = 10角/毛 = 100分）。美元体系里没有叫“毛”的单位——1美元 = 100美分（cent）。  \n所以没有标准的“美毛”。与“1毛人民币（0.1元）”最接近的美式等价是“10美分”（0.1美元），英文币名为dime（美洲十美分币）。  \n\n常用说法建议：\n- 0.1美元 = 10美分 = a dime（可以说“十美分”或“0.1美元”）  \n- 1美分 = penny（便称“美分”或“分”）  \n- 5美分 = nickel，25美分 = quarter，50美分 = half dollar。  \n\n口语上有人玩笑说“美毛”，但不是正式用法。',
-        isError: false,
-        isFromUser: false,
-        timestamp: 1761718724709,
-      },
-    ],
-    title: '美元，美分，那毛呢，美毛？',
-    updatedAt: 1761718741480,
-  }
-  state.histories = [sample]
-  state.activeId = sample.id
-  persist()
-}
+// 移除示例预设：保留空加载逻辑即可
 
 export function startDraft() {
   const now = Date.now()
@@ -231,9 +208,19 @@ export function exportHistories(): ChatRecord[] {
 export function replaceHistories(input: any): { ok: boolean; error?: string } {
   try {
     if (!Array.isArray(input)) return { ok: false, error: '历史记录格式错误：期望为数组' }
+    const prevActive = state.activeId
+    const hadDraft = state.draft != null
     const list: ChatRecord[] = input.map(normalizeRecord)
     state.histories = list
-    state.activeId = state.histories.length ? state.histories[0].id : null
+    // 保留当前激活会话：
+    // - 若此前在某个历史会话中（prevActive!=null），且仍存在则保持；不存在则回退为第一条或空
+    // - 若此前处于“新对话”（prevActive==null）且存在草稿，则保持为 null（不跳转到历史会话）
+    if (prevActive != null) {
+      const stillExists = state.histories.some(h => h.id === prevActive)
+      state.activeId = stillExists ? prevActive : (state.histories.length ? state.histories[0].id : null)
+    } else {
+      state.activeId = hadDraft ? null : (state.histories.length ? state.histories[0].id : null)
+    }
     persist()
     return { ok: true }
   } catch (e) {

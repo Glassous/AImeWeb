@@ -60,11 +60,17 @@
           <div class="sync-main">
             <div class="sync-title">配置与同步</div>
             <div class="sync-desc">地域与 endpoint 绑定，选择地域自动填充 endpoint；支持增量上传/下载并回退</div>
+            <div class="sync-desc">
+              <label class="switch">
+                <input type="checkbox" v-model="autoSyncEnabled" @change="onToggleAutoSync" />
+                <span>自动同步</span>
+              </label>
+            </div>
           </div>
           <div class="sync-actions">
-            <button class="ghost-btn" @click="openOssModal" aria-label="配置 OSS">配置</button>
-            <button class="accent-btn" @click="exportToCloud">导出至云端</button>
-            <button class="success-btn" @click="importFromCloud">从云端导入</button>
+            <button class="ghost-btn" @click="openOssModal" aria-label="配置 OSS" :disabled="cloud.loading">配置</button>
+            <button class="accent-btn" @click="exportToCloud" :disabled="cloud.loading">导出至云端</button>
+            <button class="success-btn" @click="importFromCloud" :disabled="cloud.loading">从云端导入</button>
           </div>
         </div>
       </section>
@@ -106,16 +112,42 @@
           </div>
         </div>
       </div>
+
+      <!-- 云端同步弹窗 -->
+      <div v-if="cloudModal.open" class="modal-mask" @click.self="noop">
+        <div class="modal cloud-modal">
+          <div class="modal-header">
+            <div class="modal-title">{{ cloudModal.title }}</div>
+          </div>
+          <div class="modal-body">
+            <div class="progress-top">
+              <span>{{ cloud.mode === 'upload' ? '正在上传至云端' : '正在从云端下载' }}</span>
+              <span>{{ Math.round(cloud.percent) }}%</span>
+            </div>
+            <div class="progress">
+              <div class="progress-bar" :style="{ width: cloud.percent + '%' }"></div>
+            </div>
+            <div class="progress-label">{{ cloud.label }}</div>
+            <div v-if="cloudModal.status === 'done' || cloudModal.status === 'error'" class="result-row" role="status">
+              <span :class="cloudModal.ok ? 'result-ok' : 'result-error'">{{ cloudModal.ok ? '完成' : '失败' }}</span>
+              <span class="result-msg">{{ cloudModal.message }}</span>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="ghost-btn" :disabled="cloud.loading" @click="closeCloudModal">{{ cloud.loading ? '进行中…' : '关闭' }}</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { exportGlobal, parseWithCompatibility, importGlobal } from '../store/sync'
 import { ossConfig, saveOssConfig } from '../store/oss'
-import { REGIONS, endpointForRegion, uploadIncremental, downloadAndImport } from '../store/oss'
+import { REGIONS, endpointForRegion, uploadIncremental, downloadAndImport, autoSyncEnabled, saveAutoSyncEnabled } from '../store/oss'
 const router = useRouter()
 function goBack() { router.back() }
 function toModelConfig() { router.push('/settings/model') }
@@ -191,14 +223,64 @@ function saveOss() {
   closeOssModal()
 }
 
+// 云端同步弹窗与状态
+const cloud = reactive({ loading: false, mode: '' as 'upload' | 'download' | '', percent: 0, label: '' })
+const cloudModal = reactive({ open: false, title: '云端同步', status: 'idle' as 'idle' | 'running' | 'done' | 'error', ok: false, message: '' })
+function openCloudModal(mode: 'upload' | 'download') {
+  cloudModal.open = true
+  cloud.loading = true
+  cloud.mode = mode
+  cloud.percent = 0
+  cloud.label = mode === 'upload' ? '准备增量上传…' : '准备增量下载…'
+  cloudModal.title = mode === 'upload' ? '云端上传' : '云端下载'
+  cloudModal.status = 'running'
+  cloudModal.ok = false
+  cloudModal.message = ''
+}
+function closeCloudModal() { cloudModal.open = false }
+function noop() {}
+
+function onToggleAutoSync() {
+  // 模板会自动解包 ref；此处做一次兼容处理
+  const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
+  saveAutoSyncEnabled(!!enabled)
+}
+// 注意：自动下载仅在主页触发，设置页不触发
+
 async function exportToCloud() {
-  const res = await uploadIncremental()
-  alert(res.message)
+  openCloudModal('upload')
+  try {
+    const res = await uploadIncremental(p => {
+      cloud.percent = p.percent
+      cloud.label = p.label
+    })
+    cloud.percent = 100
+    cloud.label = '上传完成'
+    cloudModal.status = res.ok ? 'done' : 'error'
+    cloudModal.ok = !!res.ok
+    cloudModal.message = res.message
+  } finally {
+    cloud.loading = false
+    cloud.mode = ''
+  }
 }
 
 async function importFromCloud() {
-  const res = await downloadAndImport()
-  alert(res.message)
+  openCloudModal('download')
+  try {
+    const res = await downloadAndImport(p => {
+      cloud.percent = p.percent
+      cloud.label = p.label
+    })
+    cloud.percent = 100
+    cloud.label = '下载并导入完成'
+    cloudModal.status = res.ok ? 'done' : 'error'
+    cloudModal.ok = !!res.ok
+    cloudModal.message = res.message
+  } finally {
+    cloud.loading = false
+    cloud.mode = ''
+  }
 }
 </script>
 
@@ -278,6 +360,19 @@ async function importFromCloud() {
 .ghost-btn:hover { background: var(--hover); }
 .hidden { display: none; }
 
+/* 进度条样式 */
+.progress-wrap { margin-top: 10px; display: grid; gap: 6px; }
+.progress-top { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--muted); }
+.progress { height: 8px; border-radius: 999px; background: var(--btn-bg); border: 1px solid var(--btn-border); overflow: hidden; }
+.progress-bar { height: 100%; background: var(--accent); transition: width 0.2s ease; }
+.progress-label { font-size: 12px; color: var(--muted); }
+
+/* 云端弹窗附加样式 */
+.cloud-modal .modal-body { display: grid; gap: 8px; }
+.result-row { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.result-ok { color: var(--success); font-weight: 600; }
+.result-error { color: var(--danger, #d23); font-weight: 600; }
+
 /* 弹窗样式 */
 .modal-mask { position: fixed; inset: 0; background: var(--mask); display: flex; align-items: center; justify-content: center; z-index: 10; }
 .modal { width: 560px; max-width: calc(100% - 24px); background: var(--modal-bg); color: var(--text); border-radius: 12px; box-shadow: var(--shadow); border: 1px solid var(--border); }
@@ -288,4 +383,8 @@ async function importFromCloud() {
 .form-row label { font-size: 12px; color: var(--muted); }
 .form-row input, .form-row select { height: 32px; border-radius: 8px; border: 1px solid var(--btn-border); background: var(--btn-bg); color: var(--text); padding: 0 8px; }
 .modal-footer { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 16px; border-top: 1px solid var(--border); }
+
+/* 自动同步开关 */
+.switch { display: inline-flex; align-items: center; gap: 6px; }
+.switch input { width: 16px; height: 16px; }
 </style>
