@@ -7,7 +7,6 @@ AIme 是一个基于 Vue 3、Vite、TypeScript、TailwindCSS 和 DaisyUI 构建�
 - **前端框架**: Vue 3
 - **构建工具**: Vite
 - **语言**: TypeScript
-- **样式**: TailwindCSS, DaisyUI
 - **路由**: Vue Router
 
 ## 主要功能
