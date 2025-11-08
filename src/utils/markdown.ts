@@ -24,6 +24,12 @@ marked.setOptions({
 function enhanceCodeBlocks(html: string): string {
   const container = document.createElement('div')
   container.innerHTML = html
+  // 链接统一新开标签页
+  const links = container.querySelectorAll('a[href]')
+  links.forEach(a => {
+    a.setAttribute('target', '_blank')
+    a.setAttribute('rel', 'noopener noreferrer')
+  })
   const codes = container.querySelectorAll('pre > code')
   codes.forEach(codeEl => {
     const preEl = codeEl.parentElement
