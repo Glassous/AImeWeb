@@ -514,7 +514,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   position: absolute; top: 6px; right: 8px;
   padding: 2px 8px; border-radius: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border);
   color: var(--text); cursor: pointer; font-size: 12px; line-height: 20px;
-  opacity: 0.6; transition: opacity 0.15s ease-in-out;
+  opacity: 0.6; transition: opacity 0.15s ease-in-out; z-index: 1;
 }
 .markdown .code-block:hover .code-copy-btn { opacity: 1; }
 

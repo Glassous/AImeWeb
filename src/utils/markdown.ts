@@ -9,8 +9,9 @@ marked.setOptions({
   langPrefix: 'language-',
   highlight(code: string, lang?: string) {
     try {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value
+      const l = (lang || '').trim().toLowerCase()
+      if (l && hljs.getLanguage(l)) {
+        return hljs.highlight(code, { language: l }).value
       }
       return hljs.highlightAuto(code).value
     } catch (_) {
