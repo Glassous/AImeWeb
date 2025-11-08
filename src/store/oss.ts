@@ -2,9 +2,9 @@ import OSS from 'ali-oss'
 import { ref } from 'vue'
 import { chatStore, exportHistories, replaceHistories } from './chat'
 import type { ChatRecord } from './chat'
-import { modelConfig, exportConfig, replaceConfig } from './modelConfig'
+import { exportConfig, replaceConfig } from './modelConfig'
 import { exportGlobal, importGlobal, parseWithCompatibility } from './sync'
-import { userProfile, exportProfile, replaceProfile } from './userProfile'
+import { exportProfile, replaceProfile } from './userProfile'
 
 // 进度上报类型（供页面展示）
 export interface SyncProgress {
@@ -163,13 +163,17 @@ export interface HistoryIndex {
 
 function buildHistoryIndex(): HistoryIndex {
   const histories = chatStore.getHistories()
-  const items: HistoryIndexItem[] = histories.map((h: ChatRecord) => ({
-    id: h.id,
-    title: h.title,
-    updatedAt: h.updatedAt,
-    messageCount: h.messages.length,
-    lastMessage: h.messages.length ? h.messages[h.messages.length - 1].content : '',
-  }))
+  const items: HistoryIndexItem[] = histories.map((h: ChatRecord) => {
+    const messages = Array.isArray(h.messages) ? h.messages : []
+    const last = messages.length ? messages[messages.length - 1] : undefined
+    return {
+      id: h.id,
+      title: h.title,
+      updatedAt: h.updatedAt,
+      messageCount: messages.length,
+      lastMessage: last ? last.content : '',
+    }
+  })
   return {
     version: 1,
     generatedAt: Date.now(),
@@ -187,7 +191,6 @@ function diffIndex(local: HistoryIndex, remote: HistoryIndex | null): { toUpload
   const toUpload: number[] = []
   const toDeleteRemote: number[] = []
   const localIds = new Set(local.items.map(i => i.id))
-  const remoteIds = new Set((remote?.items || []).map(i => i.id))
   for (const li of local.items) {
     const ri = findRemoteItem(remote, li.id)
     if (!ri) {

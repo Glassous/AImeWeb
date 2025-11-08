@@ -32,7 +32,8 @@ function loadFromLocalStorage() {
       const list = JSON.parse(raw) as ChatRecord[]
       if (Array.isArray(list)) {
         state.histories = list
-        if (state.histories.length > 0) state.activeId = state.histories[0].id
+        const first = state.histories[0]
+        if (first) state.activeId = first.id
         return
       }
     }
@@ -154,7 +155,8 @@ export function deleteChat(id: number) {
   const removedActive = state.activeId === id
   state.histories.splice(idx, 1)
   if (removedActive) {
-    state.activeId = state.histories.length ? state.histories[0].id : null
+    const first = state.histories[0]
+    state.activeId = first ? first.id : null
   }
   persist()
 }
@@ -165,7 +167,10 @@ export function removeMessageAt(chatId: number, index: number) {
   if (!r) return
   if (index < 0 || index >= r.messages.length) return
   r.messages.splice(index, 1)
-  r.updatedAt = r.messages.length ? r.messages[r.messages.length - 1].timestamp : Date.now()
+  {
+    const last = r.messages[r.messages.length - 1]
+    r.updatedAt = last ? last.timestamp : Date.now()
+  }
   persist()
 }
 
@@ -223,7 +228,7 @@ function normalizeRecord(r: any): ChatRecord {
     id,
     messages: msgs,
     title: typeof r?.title === 'string' && r.title.trim().length ? r.title.trim() : (msgs[0]?.content ? msgs[0].content.slice(0, 20) : '新对话'),
-    updatedAt: typeof r?.updatedAt === 'number' && Number.isFinite(r.updatedAt) ? r.updatedAt : (msgs.length ? msgs[msgs.length - 1].timestamp : now),
+    updatedAt: typeof r?.updatedAt === 'number' && Number.isFinite(r.updatedAt) ? r.updatedAt : ((msgs[msgs.length - 1]?.timestamp) ?? now),
   }
 }
 
@@ -243,9 +248,11 @@ export function replaceHistories(input: any): { ok: boolean; error?: string } {
     // - 若此前处于“新对话”（prevActive==null）且存在草稿，则保持为 null（不跳转到历史会话）
     if (prevActive != null) {
       const stillExists = state.histories.some(h => h.id === prevActive)
-      state.activeId = stillExists ? prevActive : (state.histories.length ? state.histories[0].id : null)
+      const first = state.histories[0]
+      state.activeId = stillExists ? prevActive : (first ? first.id : null)
     } else {
-      state.activeId = hadDraft ? null : (state.histories.length ? state.histories[0].id : null)
+      const first = state.histories[0]
+      state.activeId = hadDraft ? null : (first ? first.id : null)
     }
     persist()
     return { ok: true }

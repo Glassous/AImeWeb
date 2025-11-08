@@ -108,7 +108,7 @@ function normalizeConfig(input: any): ModelConfig | null {
       createdAt: sanitizeNumber(m.createdAt),
       remark: sanitizeString(m.remark, undefined as any),
     }))
-    .filter(m => validGroupIds.has(m.groupId))
+    .filter((m: ModelItem) => validGroupIds.has(m.groupId))
 
   const selectedModelId = sanitizeString(input.selectedModelId)
   const normalized: ModelConfig = {
@@ -153,7 +153,7 @@ export function updateGroup(id: string, patch: Partial<ModelGroup>) {
     modelConfig.value.modelGroups[idx] = {
       ...modelConfig.value.modelGroups[idx],
       ...patch,
-    }
+    } as ModelGroup
     saveModelConfig()
   }
 }
@@ -188,7 +188,7 @@ export function updateModel(id: string, patch: Partial<ModelItem>) {
     modelConfig.value.models[idx] = {
       ...modelConfig.value.models[idx],
       ...patch,
-    }
+    } as ModelItem
     saveModelConfig()
   }
 }

@@ -6,7 +6,6 @@ import hljs from 'highlight.js'
 marked.setOptions({
   gfm: true,
   breaks: true,
-  langPrefix: 'language-',
   highlight(code: string, lang?: string) {
     try {
       const l = (lang || '').trim().toLowerCase()
@@ -18,7 +17,7 @@ marked.setOptions({
       return code
     }
   },
-})
+} as any)
 
 // 包装代码块以便显示复制按钮，并给 <code> 添加 hljs 类
 function enhanceCodeBlocks(html: string): string {
@@ -54,7 +53,7 @@ function enhanceCodeBlocks(html: string): string {
 export function renderMarkdown(input: string): string {
   try {
     const md = typeof input === 'string' ? input : ''
-    const rawHtml = marked.parse(md)
+    const rawHtml = marked.parse(md) as string
     // 先进行清理，移除潜在风险，再增强代码块结构
     const safeHtml = DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true, svg: false, mathMl: false } })
     return enhanceCodeBlocks(safeHtml)

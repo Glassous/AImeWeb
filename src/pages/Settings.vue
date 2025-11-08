@@ -144,7 +144,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive } from 'vue'
 import { exportGlobal, parseWithCompatibility, importGlobal } from '../store/sync'
 import { ossConfig, saveOssConfig } from '../store/oss'
 import { REGIONS, endpointForRegion, uploadIncremental, downloadAndImport, autoSyncEnabled, saveAutoSyncEnabled } from '../store/oss'

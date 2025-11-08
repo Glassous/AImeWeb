@@ -3,7 +3,7 @@ import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
 import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
-import { modelConfig, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
+import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
 import { renderMarkdown } from '../utils/markdown'
 
@@ -56,7 +56,6 @@ const selectedModel = computed(() => {
   const id = cfg?.selectedModelId || ''
   return models.find(m => m.id === id) || null
 })
-const selectedProvider = computed(() => selectedModel.value ? (getGroupById(selectedModel.value.groupId)?.name || '未分组') : '未选择')
 // 顶部按钮仅显示“显示名称”（ModelItem.name），不显示调用名或分组
 const selectedLabel = computed(() => selectedModel.value?.name || '未选择模型')
 const showModelModal = ref(false)
@@ -123,11 +122,12 @@ function sendMessage() {
     const cur = chatStore.getActiveChat()
     if (!cur) return
     const target = cur.messages[aiIndex]
+    if (!target) return
     target.content += delta
     target.timestamp = Date.now()
     scrollToBottom()
   })
-    .then(async full => {
+    .then(async () => {
       // 流式完成后，触发自动同步（若开启）
       try {
         const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
@@ -147,8 +147,11 @@ function sendMessage() {
         })
         const cur = chatStore.getActiveChat()
         if (cur) {
-          cur.messages[aiIndex].content = res
-          cur.messages[aiIndex].timestamp = Date.now()
+          const nm = cur.messages[aiIndex]
+          if (nm) {
+            nm.content = res
+            nm.timestamp = Date.now()
+          }
         }
         const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
         const id = chatStore.getActiveChat()?.id
@@ -159,9 +162,12 @@ function sendMessage() {
       } catch (e2) {
         const cur = chatStore.getActiveChat()
         if (cur) {
-          cur.messages[aiIndex].content = `OpenAI 请求失败：${(err && err.message) ? err.message : '未知错误'}`
-          cur.messages[aiIndex].isError = true
-          cur.messages[aiIndex].timestamp = Date.now()
+          const nm = cur.messages[aiIndex]
+          if (nm) {
+            nm.content = `OpenAI 请求失败：${(err && err.message) ? err.message : '未知错误'}`
+            nm.isError = true
+            nm.timestamp = Date.now()
+          }
         }
       }
     })
@@ -191,6 +197,7 @@ async function resend(index: number) {
   const msgs = active.messages
   if (!msgs || index < 0 || index >= msgs.length) return
   const target = msgs[index]
+  if (!target) return
   if (target.isFromUser) return // 仅对 AI 消息提供“重新发送”
 
   // 构造上下文：仅取到旧 AI 回复之前的消息
@@ -211,12 +218,13 @@ async function resend(index: number) {
   // 首选流式重试；失败回退到非流式整段上下文
   try {
     isGenerating.value = true
-    const full = await replyStream(ctx, {
+    await replyStream(ctx, {
       model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
       groupId: selectedModel.value?.groupId,
     }, (delta: string) => {
       const cur = chatStore.getActiveChat(); if (!cur) return
       const nm = cur.messages[aiIndexNew]
+      if (!nm) return
       nm.content += delta
       nm.timestamp = Date.now()
       scrollToBottom()
@@ -240,8 +248,10 @@ async function resend(index: number) {
       })
       const cur = chatStore.getActiveChat(); if (cur) {
         const nm = cur.messages[aiIndexNew]
-        nm.content = res
-        nm.timestamp = Date.now()
+        if (nm) {
+          nm.content = res
+          nm.timestamp = Date.now()
+        }
       }
       try {
         const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
@@ -255,9 +265,11 @@ async function resend(index: number) {
     } catch (e2: any) {
       const cur = chatStore.getActiveChat(); if (cur) {
         const nm = cur.messages[aiIndexNew]
-        nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
-        nm.isError = true
-        nm.timestamp = Date.now()
+        if (nm) {
+          nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
+          nm.isError = true
+          nm.timestamp = Date.now()
+        }
       }
       isGenerating.value = false
     }
@@ -273,6 +285,7 @@ async function applyEditAndResend() {
   const msgs = active.messages
   if (!msgs || idx < 0 || idx >= msgs.length) return
   const target = msgs[idx]
+  if (!target) { closeEditModal(); return }
   if (!target.isFromUser) { closeEditModal(); return }
 
   // 更新文本并刷新时间戳
@@ -307,6 +320,7 @@ async function applyEditAndResend() {
     }, (delta: string) => {
       const cur2 = chatStore.getActiveChat(); if (!cur2) return
       const nm = cur2.messages[aiIndex]
+      if (!nm) return
       nm.content += delta
       nm.timestamp = Date.now()
       scrollToBottom()
@@ -330,8 +344,10 @@ async function applyEditAndResend() {
       })
       const cur3 = chatStore.getActiveChat(); if (cur3) {
         const nm = cur3.messages[aiIndex]
-        nm.content = res
-        nm.timestamp = Date.now()
+        if (nm) {
+          nm.content = res
+          nm.timestamp = Date.now()
+        }
       }
       try {
         const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
@@ -345,9 +361,11 @@ async function applyEditAndResend() {
     } catch (e2: any) {
       const cur4 = chatStore.getActiveChat(); if (cur4) {
         const nm = cur4.messages[aiIndex]
-        nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
-        nm.isError = true
-        nm.timestamp = Date.now()
+        if (nm) {
+          nm.content = `重新发送失败：${(e2 && e2.message) ? e2.message : '未知错误'}`
+          nm.isError = true
+          nm.timestamp = Date.now()
+        }
       }
       isGenerating.value = false
     }

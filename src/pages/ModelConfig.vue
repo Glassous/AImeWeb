@@ -123,14 +123,13 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { modelConfig, addGroup, updateGroup, removeGroup, addModel, updateModel, removeModel, getGroupById, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
+import { modelConfig, addGroup, updateGroup, removeGroup, addModel, updateModel, removeModel, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import { autoSyncEnabled, uploadModelConfigOnly } from '../store/oss'
 
 const router = useRouter()
 const cfg = modelConfig.value
 
 function goBack() { router.back() }
-function groupName(id: string) { return getGroupById(id)?.name ?? '—' }
 
 // 展开/折叠
 const expanded = ref<Set<string>>(new Set())
