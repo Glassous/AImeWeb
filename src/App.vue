@@ -61,6 +61,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
 .main-col {
   /* 关键：允许内部设置 overflow 的子元素滚动，而不是整体页面变长 */
   min-height: 0; /* 修正 grid 子项的默认 min-height:auto 导致溢出问题 */
+  min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;

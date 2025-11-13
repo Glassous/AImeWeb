@@ -69,7 +69,7 @@
 }
 
 html, body, #app { height: 100%; }
-body { margin: 0; color: var(--text); background: var(--bg); }
+body { margin: 0; color: var(--text); background: var(--bg); overflow-x: hidden; }
 
 button { font-family: inherit; }
 textarea { font-family: inherit; }
@@ -108,4 +108,5 @@ textarea { font-family: inherit; }
 .hljs-attr, .hljs-attribute { color: var(--code-function); }
 .hljs-function .hljs-title, .hljs-title.function_, .hljs-title.class_ { color: var(--code-title); }
 
-.markdown .katex { color: var(--text); }
+.markdown .katex { color: var(--text); max-width: 100%; }
+.markdown .katex-display { max-width: 100%; overflow-x: auto; }

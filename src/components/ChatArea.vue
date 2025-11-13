@@ -602,7 +602,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .sync-ok { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; }
 .sync-ok svg { display: block; }
 
-.scroll { flex: 1; overflow-y: auto; background: var(--bg); width: 100%; }
+.scroll { flex: 1; overflow-y: auto; overflow-x: hidden; background: var(--bg); width: 100%; min-width: 0; }
 .messages { padding: 20px; max-width: 860px; margin: 0 auto; }
 .empty { color: var(--muted); text-align: center; margin-top: 80px; }
 
@@ -633,6 +633,11 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .edit-inline:hover, .copy-inline:hover { background: var(--hover); }
 
 .text { color: var(--text); white-space: normal; word-break: break-word; }
+.text.markdown { max-width: 100%; overflow-x: hidden; }
+.markdown img { max-width: 100%; height: auto; }
+.markdown table { display: block; width: 100%; overflow-x: auto; }
+.markdown .katex-display { display: block; overflow-x: auto; }
+.markdown .katex { max-width: 100%; }
 .copy-ai {
   margin-top: 6px; display: inline-flex; align-items: center;
   border: none; background: transparent; border-radius: 8px; padding: 4px; cursor: pointer; color: var(--text);
