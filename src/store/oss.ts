@@ -116,7 +116,7 @@ async function getText(key: string): Promise<string> {
   // 优先使用签名 URL，规避 Authorization 头导致的 CORS 预检问题
   try {
     const url = (client as any).signatureUrl(key, { expires: 120 })
-    const resp = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store' })
+    const resp = await fetch(url, { method: 'GET', mode: 'cors', cache: 'no-store', referrerPolicy: 'no-referrer', credentials: 'omit' })
     if (!resp.ok) throw new Error(`签名URL下载失败：HTTP ${resp.status}`)
     const buf = await resp.arrayBuffer()
     const text = new TextDecoder().decode(buf)
