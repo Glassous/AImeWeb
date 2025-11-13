@@ -1,4 +1,5 @@
 @import 'highlight.js/styles/github.css';
+@import 'katex/dist/katex.min.css';
 
 :root {
   /* 初始为浅色，实际由 data-theme 控制 */
@@ -106,3 +107,5 @@ textarea { font-family: inherit; }
 .hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-title, .hljs-section, .hljs-name { color: var(--code-keyword); }
 .hljs-attr, .hljs-attribute { color: var(--code-function); }
 .hljs-function .hljs-title, .hljs-title.function_, .hljs-title.class_ { color: var(--code-title); }
+
+.markdown .katex { color: var(--text); }

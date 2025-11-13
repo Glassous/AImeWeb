@@ -296,7 +296,6 @@ export async function uploadIncremental(progress?: (p: SyncProgress) => void): P
 }
 
 export async function downloadAndImport(progress?: (p: SyncProgress) => void): Promise<{ ok: boolean; message: string }> {
-  // 优先增量
   try {
     let done = 0
     let total = 0
@@ -306,55 +305,52 @@ export async function downloadAndImport(progress?: (p: SyncProgress) => void): P
     }
     emit('准备增量下载…')
 
-    // 1) 用户资料（可选，若存在则优先导入；失败忽略）
     try {
       const up = await getJson<any>('AIme/user_profile.json')
       replaceProfile(up)
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
     done += 1
 
     const index = await getJson<HistoryIndex>('AIme/history/index.json')
+    const localList = exportHistories()
+    const localIds = new Set(localList.map(h => h.id))
+    const toAddIds = index.items.filter(i => !localIds.has(i.id)).map(i => i.id)
     done += 1
-    // 预估总步数：用户资料 + 下载索引 + 模型配置 + 逐条记录 + 应用历史
-    // 模型配置尝试算作一步
-    total = 1 /* user */ + 1 /* index */ + 1 /* model */ + index.items.length /* records */ + 1 /* apply */
-    emit('索引已下载，开始导入…')
-    // 2) 模型配置
+
+    total = 1 + 1 + 1 + toAddIds.length + 1
+    emit('索引已下载，开始对照并增量导入…')
+
     try {
       const mc = await getJson<any>('AIme/model_config.json')
       const res = replaceConfig(mc)
       if (!res.ok) throw new Error(res.error || '模型配置导入失败')
     } catch (e) {
-      // 忽略模型配置失败继续
+      // 不中断流程，改为记录进度标签
     }
-    done += 1; emit('导入模型配置（可选）')
-    // 3) 用户资料（可选）——当前端未集成，忽略读取失败
-    // 4) 遍历索引条目下载记录并覆盖导入
-    const list: ChatRecord[] = []
-    for (const it of index.items) {
+    done += 1; emit('模型配置导入完成（若存在）')
+
+    const added: ChatRecord[] = []
+    for (const id of toAddIds) {
       try {
-        const rec = await getJson<ChatRecord>(`AIme/history/${it.id}.json`)
-        list.push(rec)
-      } catch (e) {
-        // 单条失败：跳过该条
-      }
-      done += 1; emit(`下载历史记录 #${it.id}`)
+        const rec = await getJson<ChatRecord>(`AIme/history/${id}.json`)
+        added.push(rec)
+      } catch (_) {}
+      done += 1; emit(`下载缺失记录 #${id}`)
     }
-    const histRes = replaceHistories(list)
+    const finalList = localList.concat(added)
+    const histRes = replaceHistories(finalList)
     if (!histRes.ok) throw new Error(histRes.error || '历史记录导入失败')
     done += 1; emit('应用历史记录')
 
-    progress?.({ current: total, total, percent: 100, label: '下载并导入完成' })
-
-    return { ok: true, message: '增量下载并导入成功' }
+    progress?.({ current: total, total, percent: 100, label: '增量下载并导入完成' })
+    return { ok: true, message: `增量导入完成：新增 ${added.length} 条` }
   } catch (e: any) {
-    // 回退到单文件备份
     try {
       const data = await getJson<any>('AImeBackup.json')
       const res = importGlobal(data)
       if (!res.ok) throw new Error(res.error || '单文件备份导入失败')
-      progress?.({ current: 1, total: 1, percent: 100, label: '索引缺失，已回退为单文件备份导入' })
-      return { ok: true, message: '索引缺失或异常，已回退为单文件备份导入' }
+      progress?.({ current: 1, total: 1, percent: 100, label: '索引异常，已回退单文件导入' })
+      return { ok: true, message: '已回退为单文件备份导入' }
     } catch (e2: any) {
       progress?.({ current: 1, total: 1, percent: 100, label: '下载/导入失败' })
       return { ok: false, message: '下载/导入失败：' + (e2?.message || e?.message || '未知错误') }

@@ -1,10 +1,12 @@
-import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import hljs from 'highlight.js'
+import MarkdownIt from 'markdown-it'
+import { katex as mdKatex } from '@mdit/plugin-katex'
+import 'katex/dist/katex.min.css'
 
-// 基础配置：启用 GFM 与换行
-marked.setOptions({
-  gfm: true,
+const mdIt = new MarkdownIt({
+  html: true,
+  linkify: true,
   breaks: true,
   highlight(code: string, lang?: string) {
     try {
@@ -17,7 +19,13 @@ marked.setOptions({
       return code
     }
   },
-} as any)
+})
+
+mdIt.use(mdKatex, {
+  delimiters: 'all',
+  throwOnError: false,
+  strict: 'ignore',
+})
 
 // 包装代码块以便显示复制按钮，并给 <code> 添加 hljs 类
 function enhanceCodeBlocks(html: string): string {
@@ -49,16 +57,35 @@ function enhanceCodeBlocks(html: string): string {
   return container.innerHTML
 }
 
+// markdown-it + KaTeX 插件负责 LaTeX 渲染
+
 // 将纯文本 Markdown 转为安全的 HTML
 export function renderMarkdown(input: string): string {
   try {
-    const md = typeof input === 'string' ? input : ''
-    const rawHtml = marked.parse(md) as string
-    // 先进行清理，移除潜在风险，再增强代码块结构
+    const src = typeof input === 'string' ? input : ''
+    const lines: string[] = src.split(/\r?\n/)
+    const out: string[] = []
+    for (let i = 0; i < lines.length; i++) {
+      const ln = String(lines[i] ?? '')
+      if (ln.trim() === '[') {
+        let buf: string[] = []
+        let j = i + 1
+        while (j < lines.length && String(lines[j] ?? '').trim() !== ']') { buf.push(String(lines[j] ?? '')); j++ }
+        if (j < lines.length && String(lines[j] ?? '').trim() === ']') {
+          out.push('$$')
+          out.push(...buf)
+          out.push('$$')
+          i = j
+          continue
+        }
+      }
+      out.push(ln)
+    }
+    const normalized = out.join('\n')
+    const rawHtml = mdIt.render(normalized)
     const safeHtml = DOMPurify.sanitize(rawHtml, { USE_PROFILES: { html: true, svg: false, mathMl: false } })
     return enhanceCodeBlocks(safeHtml)
   } catch (_) {
-    // 兜底：当解析失败时，按纯文本输出（不允许任何标签）
     return DOMPurify.sanitize(String(input || ''), { ALLOWED_TAGS: [] })
   }
 }
