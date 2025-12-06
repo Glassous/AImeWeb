@@ -9,7 +9,6 @@
       <div class="title">用户设置</div>
       <div class="spacer"></div>
       <button class="ghost-btn" @click="clear">清空</button>
-      <button class="success-btn" @click="uploadProfile">上传用户资料</button>
     </div>
 
     <div class="content">
@@ -53,7 +52,7 @@
 import { reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { userProfile, setUserProfile, clearUserProfile } from '../store/userProfile'
-import { uploadUserProfileOnly, autoSyncEnabled } from '../store/oss'
+
 
 const router = useRouter()
 function goBack() { router.back() }
@@ -121,16 +120,7 @@ function doSave() {
     avatarUrl: form.avatarUrl || undefined,
     customFields: toCustomMap(),
   })
-  // 自动同步：编辑完成一段时间后上传用户资料
-  try {
-    const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-    if (enabled) {
-      if ((doSave as any)._uploadTimer) window.clearTimeout((doSave as any)._uploadTimer)
-      ;(doSave as any)._uploadTimer = window.setTimeout(async () => {
-        try { await uploadUserProfileOnly() } catch (_) {}
-      }, 1000)
-    }
-  } catch (_) {}
+
 }
 
 // 热保存：表单与自定义字段变更时自动保存（节流）
@@ -147,10 +137,7 @@ function clear() {
   alert('已清空')
 }
 
-async function uploadProfile() {
-  const res = await uploadUserProfileOnly()
-  alert(res.message)
-}
+
 
 function addCustom() { customList.push({ key: '', value: '' }) }
 function removeCustom(i: number) { customList.splice(i, 1) }

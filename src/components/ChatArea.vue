@@ -4,7 +4,7 @@ import { chatStore } from '../store/chat'
 import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
-import { autoSyncEnabled, uploadHistoryRecordAndIndex, mirrorLocalWithCloud, lastSyncSuccessAt, markSyncSuccess, checkIndexDiff } from '../store/oss'
+
 import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void }>()
@@ -42,12 +42,7 @@ function closeEditModal() {
   editDraft.value = ''
 }
 
-// 主页右上角同步成功图标（2秒后消失）
-const showSyncOk = ref(false)
-watch(lastSyncSuccessAt, () => {
-  showSyncOk.value = true
-  window.setTimeout(() => { showSyncOk.value = false }, 2000)
-})
+
 
 // 当前选择模型信息
 const selectedModel = computed(() => {
@@ -127,16 +122,8 @@ function sendMessage() {
     target.timestamp = Date.now()
     scrollToBottom()
   })
-    .then(async () => {
-      // 流式完成后，触发自动同步（若开启）
-      try {
-        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-        const id = chatStore.getActiveChat()?.id
-        if (enabled && typeof id === 'number') {
-          await uploadHistoryRecordAndIndex(id)
-          markSyncSuccess()
-        }
-      } catch (_) { /* ignore auto-upload failure */ }
+    .then(() => {
+      // 流式完成
     })
     .catch(async (err) => {
       // 回退：非流式一次性请求
@@ -153,12 +140,7 @@ function sendMessage() {
             nm.timestamp = Date.now()
           }
         }
-        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-        const id = chatStore.getActiveChat()?.id
-        if (enabled && typeof id === 'number') {
-          await uploadHistoryRecordAndIndex(id)
-          markSyncSuccess()
-        }
+
       } catch (e2) {
         const cur = chatStore.getActiveChat()
         if (cur) {
@@ -229,15 +211,7 @@ async function resend(index: number) {
       nm.timestamp = Date.now()
       scrollToBottom()
     })
-    // 自动同步
-    try {
-      const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-      const aid = chatStore.getActiveChat()?.id
-      if (enabled && typeof aid === 'number') {
-        await uploadHistoryRecordAndIndex(aid)
-        markSyncSuccess()
-      }
-    } catch (_) {}
+
     isGenerating.value = false
   } catch (err) {
     // 非流式整段上下文回退
@@ -253,14 +227,7 @@ async function resend(index: number) {
           nm.timestamp = Date.now()
         }
       }
-      try {
-        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-        const aid = chatStore.getActiveChat()?.id
-        if (enabled && typeof aid === 'number') {
-          await uploadHistoryRecordAndIndex(aid)
-          markSyncSuccess()
-        }
-      } catch (_) {}
+
       isGenerating.value = false
     } catch (e2: any) {
       const cur = chatStore.getActiveChat(); if (cur) {
@@ -325,15 +292,7 @@ async function applyEditAndResend() {
       nm.timestamp = Date.now()
       scrollToBottom()
     })
-    // 自动同步
-    try {
-      const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-      const aid = chatStore.getActiveChat()?.id
-      if (enabled && typeof aid === 'number') {
-        await uploadHistoryRecordAndIndex(aid)
-        markSyncSuccess()
-      }
-    } catch (_) {}
+
     isGenerating.value = false
   } catch (err) {
     // 非流式整段上下文回退
@@ -349,14 +308,7 @@ async function applyEditAndResend() {
           nm.timestamp = Date.now()
         }
       }
-      try {
-        const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-        const aid = chatStore.getActiveChat()?.id
-        if (enabled && typeof aid === 'number') {
-          await uploadHistoryRecordAndIndex(aid)
-          markSyncSuccess()
-        }
-      } catch (_) {}
+
       isGenerating.value = false
     } catch (e2: any) {
       const cur4 = chatStore.getActiveChat(); if (cur4) {
@@ -390,21 +342,7 @@ onMounted(() => {
   chatStore.startDraft()
   // 绑定点击事件，用于复制代码块
   try { messagesEl.value?.addEventListener('click', onMessageClick) } catch (_) {}
-  try {
-    const enabled = (autoSyncEnabled as any).value !== undefined ? (autoSyncEnabled as any).value : autoSyncEnabled
-    if (enabled) {
-      // 先比对ID表，只有不同才触发下载，减少流量
-      checkIndexDiff()
-        .then(diff => {
-          if (diff.ok && (diff.added > 0 || diff.removed > 0)) {
-            return mirrorLocalWithCloud()
-          }
-          return { ok: false, message: '无需同步', added: 0, removed: 0 }
-        })
-        .then(res => { if ((res as any).ok) markSyncSuccess() })
-        .catch(() => {})
-    }
-  } catch (_) {}
+
 })
 
 onUnmounted(() => {
@@ -444,12 +382,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
           <path d="M20 12a8 8 0 1 1-8-8 6 6 0 0 0 8 8z" fill="currentColor"/>
         </svg>
       </button>
-      <div class="sync-ok" v-show="showSyncOk" title="同步完成">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
-          <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
     </header>
 
     <div class="scroll" ref="messagesEl">
