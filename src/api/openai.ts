@@ -49,7 +49,6 @@ export async function reply(message: string, options: OpenAIReplyOptions = {}): 
 
   // Lazy import stores to avoid circular deps
   const { getGroupById, modelConfig } = await import('../store/modelConfig')
-  const { buildUserProfileSystemMessage } = await import('../store/userProfile')
 
   const modelName = options.model || ''
   const groupId = options.groupId || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.groupId || '')
@@ -60,7 +59,7 @@ export async function reply(message: string, options: OpenAIReplyOptions = {}): 
   const model = modelName || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.modelName || '')
   if (!model) throw new Error('未选择模型或模型名为空。')
 
-  const sys = buildUserProfileSystemMessage()
+  const sys = ''
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`,
@@ -115,7 +114,6 @@ export async function replyConversation(
   options: OpenAIReplyOptions = {},
 ): Promise<string> {
   const { getGroupById, modelConfig } = await import('../store/modelConfig')
-  const { buildUserProfileSystemMessage } = await import('../store/userProfile')
   const groupId = options.groupId || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.groupId || '')
   const group = groupId ? getGroupById(groupId) : undefined
   const baseUrl = stripTrailingSlashes(group?.baseUrl || 'https://api.openai.com/v1')
@@ -124,7 +122,7 @@ export async function replyConversation(
   const model = options.model || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.modelName || '')
   if (!model) throw new Error('未选择模型或模型名为空。')
 
-  const sys = buildUserProfileSystemMessage()
+  const sys = ''
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${apiKey}`,
@@ -133,7 +131,7 @@ export async function replyConversation(
   // 1) 先尝试 Responses 非流式
   try {
     const input = [] as any[]
-    if (sys && sys.trim()) input.push({ role: 'system', content: [{ type: 'input_text', text: sys }] })
+    if (sys) input.push({ role: 'system', content: [{ type: 'input_text', text: sys }] })
     for (const m of conversation) {
       input.push({ role: m.role, content: [{ type: 'input_text', text: m.content }] })
     }
@@ -150,7 +148,7 @@ export async function replyConversation(
 
   // 2) Chat Completions 非流式
   const messages: any[] = []
-  if (sys && sys.trim()) messages.push({ role: 'system', content: sys })
+  if (sys) messages.push({ role: 'system', content: sys })
   for (const m of conversation) messages.push({ role: m.role === 'system' ? 'system' : (m.role === 'assistant' ? 'assistant' : 'user'), content: m.content })
   const resp2 = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST', headers, body: JSON.stringify({ model, messages })
@@ -185,7 +183,6 @@ function toResponsesInput(conv: ConversationMessage[], sys: string | null): any[
 
 export async function replyStream(conversation: ConversationMessage[], options: OpenAIReplyOptions = {}, onDelta: (delta: string) => void): Promise<string> {
   const { getGroupById, modelConfig } = await import('../store/modelConfig')
-  const { buildUserProfileSystemMessage } = await import('../store/userProfile')
   const groupId = options.groupId || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.groupId || '')
   const group = groupId ? getGroupById(groupId) : undefined
   const baseUrl = stripTrailingSlashes(group?.baseUrl || 'https://api.openai.com/v1')
@@ -193,7 +190,7 @@ export async function replyStream(conversation: ConversationMessage[], options: 
   if (!apiKey) throw new Error('未配置 API Key，请在“模型配置”中填写。')
   const model = options.model || (modelConfig.value?.models.find(m => m.id === modelConfig.value?.selectedModelId)?.modelName || '')
   if (!model) throw new Error('未选择模型或模型名为空。')
-  const sys = buildUserProfileSystemMessage()
+  const sys = ''
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

@@ -25,17 +25,7 @@
               </svg>
             </div>
           </button>
-          <button class="card" @click="toUserSettings" aria-label="用户设置">
-            <div class="card-main">
-              <div class="card-title">用户设置</div>
-              <div class="card-desc">编辑个人资料</div>
-            </div>
-            <div class="card-right">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M9 18l6-6-6-6" />
-              </svg>
-            </div>
-          </button>
+
         </div>
       </section>
 
@@ -67,7 +57,7 @@ import { exportGlobal, parseWithCompatibility, importGlobal } from '../store/syn
 const router = useRouter()
 function goBack() { router.back() }
 function toModelConfig() { router.push('/settings/model') }
-function toUserSettings() { router.push('/settings/user') }
+
 
 const fileInput = ref<HTMLInputElement | null>(null)
 function triggerImport() { fileInput.value?.click() }
