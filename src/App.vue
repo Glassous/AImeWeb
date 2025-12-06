@@ -36,7 +36,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
   <div
     class="layout"
     :class="{ mobile: isMobile || hideSidebar() }"
-    :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': isSidebarOpen ? '280px' : '0px' } : undefined"
+    :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': isSidebarOpen ? '280px' : '0px' } : {}"
   >
     <Sidebar v-if="!hideSidebar()" :class="{ open: isSidebarOpen }" :is-mobile="isMobile" :is-open="isSidebarOpen" @close="closeSidebar" />
     <div class="main-col">
