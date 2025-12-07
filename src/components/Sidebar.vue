@@ -66,7 +66,7 @@ function closeModal() {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ open: props.isOpen }">
+  <aside class="sidebar" :class="[props.isOpen ? 'open' : '']">
     <div class="sidebar-top">
       <div class="brand">AIme</div>
       <button v-if="props.isMobile" class="close-mobile" aria-label="关闭" title="关闭" @click="close">
@@ -84,7 +84,7 @@ function closeModal() {
         v-for="h in histories"
         :key="h.id"
         class="history-item"
-        :class="{ active: h.id === activeId }"
+        :class="[h.id === activeId ? 'active' : '']"
         @click="selectChat(h.id)"
       >
         <div class="row">
@@ -109,7 +109,6 @@ function closeModal() {
   <div class="sidebar-footer">
       <button class="settings-btn" title="设置" @click="router.push('/settings')">设置</button>
   </div>
-    <!-- 模态框：编辑 / 删除确认 -->
     <div v-if="modal.type" class="modal-mask" @click.self="closeModal">
       <div class="modal">
         <div class="modal-title">

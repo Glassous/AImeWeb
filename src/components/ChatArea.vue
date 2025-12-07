@@ -394,9 +394,8 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             v-for="(m, i) in activeChat.messages"
             :key="i"
             class="msg"
-            :class="{ user: m.isFromUser, ai: !m.isFromUser, error: m.isError }"
+            :class="[m.isFromUser ? 'user' : 'ai', m.isError ? 'error' : '']"
           >
-            <!-- 发送气泡：右侧对齐；hover 显示复制按钮（下方） -->
             <template v-if="m.isFromUser">
               <div class="bubble-wrap">
                 <div class="bubble">{{ m.content }}</div>
@@ -416,7 +415,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         </div>
               </div>
             </template>
-            <!-- AI 文本：左侧常驻复制按钮（在内容下方靠左） -->
             <template v-else>
               <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
               <div class="actions">
@@ -439,7 +437,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
     </div>
     </div>
 
-    <!-- 复制成功提示 -->
     <div v-if="showCopyToast" class="toast-layer" aria-live="polite">
       <div class="toast">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -470,7 +467,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
       </button>
     </footer>
 
-    <!-- 模型选择弹窗 -->
     <div v-if="showModelModal" class="modal-mask" @click.self="closeModelSelector">
       <div class="modal">
         <div class="modal-title">选择模型</div>
@@ -484,7 +480,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
                   v-for="m in listModelsInGroup(g.id)"
                   :key="m.id"
                   class="model-item"
-                  :class="{ active: m.id === selectedId }"
+                  :class="[m.id === selectedId ? 'active' : '']"
                   @click="chooseModel(m.id)"
                 >
                   {{ m.name || m.modelName }}
@@ -499,7 +495,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
       </div>
     </div>
 
-    <!-- 编辑消息弹窗 -->
     <div v-if="showEditModal" class="modal-mask" @click.self="closeEditModal">
       <div class="modal" role="dialog" aria-modal="true">
         <div class="modal-title">编辑消息</div>

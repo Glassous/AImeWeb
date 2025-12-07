@@ -35,10 +35,10 @@ const hideSidebar = () => route.meta.hideSidebar === true
 <template>
   <div
     class="layout"
-    :class="{ mobile: isMobile || hideSidebar() }"
+    :class="[(isMobile || hideSidebar()) ? 'mobile' : '']"
     :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': isSidebarOpen ? '280px' : '0px' } : {}"
   >
-    <Sidebar v-if="!hideSidebar()" :class="{ open: isSidebarOpen }" :is-mobile="isMobile" :is-open="isSidebarOpen" @close="closeSidebar" />
+    <Sidebar v-if="!hideSidebar()" :class="[isSidebarOpen ? 'open' : '']" :is-mobile="isMobile" :is-open="isSidebarOpen" @close="closeSidebar" />
     <div class="main-col">
       <RouterView v-slot="{ Component }">
         <component :is="Component" :sidebar-open="isSidebarOpen" :toggle-sidebar="toggleSidebar" :is-mobile="isMobile" />
