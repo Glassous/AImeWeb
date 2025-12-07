@@ -1,12 +1,39 @@
 import { exportConfig, replaceConfig } from './modelConfig'
 import { exportHistories, replaceHistories } from './chat'
+import { supabase } from '../api/supabase'
+import { ref, watch } from 'vue'
+import { authState } from './auth'
 
 export interface GlobalBackup {
   version: number
   exportedAt: number
   modelConfig?: any
   chatHistories?: any
+  lastSynced?: number
 }
+
+// 同步状态常量
+export const SyncStatus = {
+  IDLE: 'idle',
+  SYNCING: 'syncing',
+  SUCCESS: 'success',
+  FAILED: 'failed'
+} as const
+
+export type SyncStatus = typeof SyncStatus[keyof typeof SyncStatus]
+
+// 同步状态管理
+export const syncState = ref<{
+  status: SyncStatus
+  lastSynced: number | null
+  progress: number
+  error: string | null
+}>({
+  status: SyncStatus.IDLE,
+  lastSynced: null,
+  progress: 0,
+  error: null
+})
 
 // 兼容性解析：支持注释、单引号、未加引号字段名、尾逗号
 export function parseWithCompatibility(text: string): { ok: boolean; data?: any; error?: string } {
@@ -24,7 +51,7 @@ export function parseWithCompatibility(text: string): { ok: boolean; data?: any;
       // single to double quotes for strings
       t = t.replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, '"$1"')
       // remove trailing commas
-      t = t.replace(/,\s*([}\]])/g, '$1')
+      t = t.replace(/,\s*([\}\]])/g, '$1')
       const data = JSON.parse(t)
       return { ok: true, data }
     } catch (e) {
@@ -39,6 +66,7 @@ export function exportGlobal(): GlobalBackup {
     exportedAt: Date.now(),
     modelConfig: exportConfig(),
     chatHistories: exportHistories(),
+    lastSynced: syncState.value.lastSynced || undefined
   }
 }
 
@@ -73,11 +101,178 @@ export function importGlobal(obj: any): { ok: boolean; error?: string; applied: 
       applied.push('chatHistories')
     }
 
-    if (applied.length === 0) {
-      return { ok: false, error: '未检测到可识别的字段（模型配置或历史记录）', applied }
+    // 更新最后同步时间
+    if (obj && typeof obj === 'object' && obj.lastSynced) {
+      syncState.value.lastSynced = obj.lastSynced
     }
+
+    // 即使没有检测到可识别的字段，也返回成功，这样同步流程就能继续进行上传操作
     return { ok: true, applied }
   } catch (e) {
     return { ok: false, error: (e as Error).message, applied: [] }
   }
+}
+
+// 上传数据到云端
+export async function uploadToCloud(): Promise<{ ok: boolean; error?: string }> {
+  if (!authState.value.isAuthenticated) {
+    return { ok: false, error: '用户未登录' }
+  }
+
+  try {
+    syncState.value.status = SyncStatus.SYNCING
+    syncState.value.progress = 30
+
+    const backupData = exportGlobal()
+    const userId = authState.value.user?.id
+
+    if (!userId) {
+      throw new Error('用户ID不存在')
+    }
+
+    syncState.value.progress = 60
+
+    // 使用Supabase RPC函数上传数据
+    const { error } = await supabase.rpc('sync_upload_data', {
+      p_user_id: userId,
+      p_backup_data: backupData
+    })
+
+    if (error) {
+      throw error
+    }
+
+    syncState.value.status = SyncStatus.SUCCESS
+    syncState.value.progress = 100
+    syncState.value.lastSynced = Date.now()
+    syncState.value.error = null
+
+    return { ok: true }
+  } catch (error) {
+    syncState.value.status = SyncStatus.FAILED
+    syncState.value.error = (error as Error).message
+    syncState.value.progress = 0
+    return { ok: false, error: (error as Error).message }
+  }
+}
+
+// 从云端下载数据
+export async function downloadFromCloud(): Promise<{ ok: boolean; error?: string; hasData: boolean }> {
+  if (!authState.value.isAuthenticated) {
+    return { ok: false, error: '用户未登录', hasData: false }
+  }
+
+  try {
+    syncState.value.status = SyncStatus.SYNCING
+    syncState.value.progress = 30
+
+    const userId = authState.value.user?.id
+
+    if (!userId) {
+      throw new Error('用户ID不存在')
+    }
+
+    syncState.value.progress = 60
+
+    // 使用Supabase RPC函数下载数据
+    const { data, error } = await supabase.rpc('sync_download_data', {
+      p_user_id: userId
+    })
+
+    if (error) {
+      throw error
+    }
+
+    if (data && data.ok && data.data) {
+      // 导入数据
+      const importResult = importGlobal(data.data)
+      if (!importResult.ok) {
+        throw new Error(importResult.error)
+      }
+
+      syncState.value.progress = 80
+      syncState.value.error = null
+
+      return { ok: true, hasData: true }
+    } else if (data && !data.ok && data.message === '无备份数据') {
+      // 没有备份数据，这是首次同步，视为正常情况
+      syncState.value.progress = 80
+      syncState.value.error = null
+      return { ok: true, hasData: false }
+    } else {
+      throw new Error('下载数据失败：' + (data?.message || '未知错误'))
+    }
+  } catch (error) {
+    syncState.value.status = SyncStatus.FAILED
+    syncState.value.error = (error as Error).message
+    syncState.value.progress = 0
+    return { ok: false, error: (error as Error).message, hasData: false }
+  }
+}
+
+// 执行同步（上传和下载）
+export async function syncWithCloud(): Promise<{ ok: boolean; error?: string }> {
+  // 先下载最新数据
+  const downloadResult = await downloadFromCloud()
+  if (!downloadResult.ok) {
+    return downloadResult
+  }
+
+  // 再上传本地数据
+  const uploadResult = await uploadToCloud()
+  if (!uploadResult.ok) {
+    return uploadResult
+  }
+
+  // 只有上传成功后，才更新同步状态为成功
+  syncState.value.status = SyncStatus.SUCCESS
+  syncState.value.progress = 100
+  syncState.value.lastSynced = Date.now()
+  
+  return { ok: true }
+}
+
+// 自动同步功能
+export function enableAutoSync(interval: number = 300000) { // 默认5分钟
+  let syncInterval: number | null = null
+
+  // 监听认证状态变化
+  watch(
+    () => authState.value.isAuthenticated,
+    (isAuthenticated) => {
+      if (isAuthenticated) {
+        // 用户登录后，立即执行一次同步
+        syncWithCloud()
+        // 设置自动同步间隔
+        syncInterval = window.setInterval(() => {
+          syncWithCloud()
+        }, interval)
+      } else {
+        // 用户登出后，清除自动同步
+        if (syncInterval) {
+          clearInterval(syncInterval)
+          syncInterval = null
+        }
+      }
+    }
+  )
+
+  // 初始检查
+  if (authState.value.isAuthenticated) {
+    syncWithCloud()
+    syncInterval = window.setInterval(() => {
+      syncWithCloud()
+    }, interval)
+  }
+
+  return () => {
+    if (syncInterval) {
+      clearInterval(syncInterval)
+    }
+  }
+}
+
+// 初始化自动同步
+if (typeof window !== 'undefined') {
+  enableAutoSync()
 }
