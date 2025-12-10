@@ -124,22 +124,34 @@ export async function uploadToCloud(): Promise<{ ok: boolean; error?: string }> 
     syncState.value.progress = 30
 
     const backupData = exportGlobal()
-    const userId = authState.value.user?.id
+    const sessionToken = authState.value.sessionToken
 
-    if (!userId) {
-      throw new Error('用户ID不存在')
+    if (!sessionToken) {
+      throw new Error('会话令牌不存在')
     }
 
     syncState.value.progress = 60
 
-    // 使用Supabase RPC函数上传数据
-    const { error } = await supabase.rpc('sync_upload_data', {
-      p_user_id: userId,
-      p_backup_data: backupData
+    // 使用Supabase RPC函数上传数据，严格适配schema中的函数名
+    const { data, error } = await supabase.rpc('sync_upload_backup_v1', {
+      p_token: sessionToken,
+      p_data: backupData,
+      p_sync_history: true,
+      p_sync_model_config: true,
+      p_sync_selected_model: true,
+      p_sync_api_key: true
     })
 
     if (error) {
       throw error
+    }
+
+    if (data && data.ok) {
+      // 导入返回的数据，确保本地数据与云端一致
+      const importResult = importGlobal(data)
+      if (!importResult.ok) {
+        throw new Error(importResult.error)
+      }
     }
 
     syncState.value.status = SyncStatus.SUCCESS
@@ -166,26 +178,32 @@ export async function downloadFromCloud(): Promise<{ ok: boolean; error?: string
     syncState.value.status = SyncStatus.SYNCING
     syncState.value.progress = 30
 
-    const userId = authState.value.user?.id
+    const sessionToken = authState.value.sessionToken
 
-    if (!userId) {
-      throw new Error('用户ID不存在')
+    if (!sessionToken) {
+      throw new Error('会话令牌不存在')
     }
 
     syncState.value.progress = 60
 
-    // 使用Supabase RPC函数下载数据
-    const { data, error } = await supabase.rpc('sync_download_data', {
-      p_user_id: userId
+    // 新数据库不再使用sync_download_backup_v1，直接使用sync_upload_backup_v1实现下载
+    // 传递空数据对象，只执行读取操作
+    const { data, error } = await supabase.rpc('sync_upload_backup_v1', {
+      p_token: sessionToken,
+      p_data: {},
+      p_sync_history: false,
+      p_sync_model_config: false,
+      p_sync_selected_model: false,
+      p_sync_api_key: false
     })
 
     if (error) {
       throw error
     }
 
-    if (data && data.ok && data.data) {
+    if (data && data.ok) {
       // 导入数据
-      const importResult = importGlobal(data.data)
+      const importResult = importGlobal(data)
       if (!importResult.ok) {
         throw new Error(importResult.error)
       }
@@ -194,11 +212,6 @@ export async function downloadFromCloud(): Promise<{ ok: boolean; error?: string
       syncState.value.error = null
 
       return { ok: true, hasData: true }
-    } else if (data && !data.ok && data.message === '无备份数据') {
-      // 没有备份数据，这是首次同步，视为正常情况
-      syncState.value.progress = 80
-      syncState.value.error = null
-      return { ok: true, hasData: false }
     } else {
       throw new Error('下载数据失败：' + (data?.message || '未知错误'))
     }

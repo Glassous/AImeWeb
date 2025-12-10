@@ -6,6 +6,7 @@ export interface ChatMessage {
   isError: boolean
   isFromUser: boolean
   timestamp: number
+  modelDisplayName?: string
 }
 
 // 历史记录结构，严格遵守用户提供的格式
@@ -214,6 +215,7 @@ function normalizeMessage(m: any): ChatMessage {
     isError: Boolean(m?.isError),
     isFromUser: Boolean(m?.isFromUser),
     timestamp: typeof m?.timestamp === 'number' && Number.isFinite(m.timestamp) ? m.timestamp : Date.now(),
+    modelDisplayName: typeof m?.modelDisplayName === 'string' ? m.modelDisplayName : undefined,
   }
 }
 

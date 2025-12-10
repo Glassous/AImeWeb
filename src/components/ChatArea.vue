@@ -95,6 +95,7 @@ function sendMessage() {
     isError: false,
     isFromUser: false,
     timestamp: Date.now(),
+    modelDisplayName: selectedLabel.value,
   }
   chatStore.appendMessage(placeholder)
   scrollToBottom()
@@ -430,6 +431,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
                     <path d="M7 4v4h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </button>
+                <span v-if="m.modelDisplayName" class="model-info" title="使用的模型">{{ m.modelDisplayName }}</span>
               </div>
             </template>
           </div>
@@ -576,6 +578,19 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .actions { display: flex; gap: 6px; align-items: center; }
 .copy-ai:hover, .copy-inline:hover { background: var(--hover); }
 .resend-ai:hover { background: var(--hover); }
+
+.model-info {
+  margin-top: 6px;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  background: var(--hover);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
 
 .error .bubble { background: var(--error-bg); }
 
