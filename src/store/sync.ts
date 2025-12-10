@@ -1,7 +1,7 @@
 import { exportConfig, replaceConfig } from './modelConfig'
 import { exportHistories, replaceHistories } from './chat'
 import { supabase } from '../api/supabase'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import { authState } from './auth'
 
 export interface GlobalBackup {
@@ -245,47 +245,4 @@ export async function syncWithCloud(): Promise<{ ok: boolean; error?: string }> 
   return { ok: true }
 }
 
-// 自动同步功能
-export function enableAutoSync(interval: number = 300000) { // 默认5分钟
-  let syncInterval: number | null = null
 
-  // 监听认证状态变化
-  watch(
-    () => authState.value.isAuthenticated,
-    (isAuthenticated) => {
-      if (isAuthenticated) {
-        // 用户登录后，立即执行一次同步
-        syncWithCloud()
-        // 设置自动同步间隔
-        syncInterval = window.setInterval(() => {
-          syncWithCloud()
-        }, interval)
-      } else {
-        // 用户登出后，清除自动同步
-        if (syncInterval) {
-          clearInterval(syncInterval)
-          syncInterval = null
-        }
-      }
-    }
-  )
-
-  // 初始检查
-  if (authState.value.isAuthenticated) {
-    syncWithCloud()
-    syncInterval = window.setInterval(() => {
-      syncWithCloud()
-    }, interval)
-  }
-
-  return () => {
-    if (syncInterval) {
-      clearInterval(syncInterval)
-    }
-  }
-}
-
-// 初始化自动同步
-if (typeof window !== 'undefined') {
-  enableAutoSync()
-}
