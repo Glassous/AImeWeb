@@ -1,63 +1,154 @@
--- ==========================================
--- AIme - Supabase 完整数据库构建脚本
--- ==========================================
+-- =============================================================================
+-- AIme Android 后端初始化脚本 (v5.2 - 修复同步与密码哈希)
+-- =============================================================================
 
--- 1. 初始化扩展 (Extensions)
--- 启用 pgcrypto 用于密码哈希，uuid-ossp 用于生成 UUID
+-- 1. 创建 extensions 架构并启用 pgcrypto
 CREATE SCHEMA IF NOT EXISTS extensions;
 CREATE EXTENSION IF NOT EXISTS pgcrypto SCHEMA extensions;
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp" SCHEMA extensions;
 
--- 2. 创建表结构 (Tables)
+-- 2. 清理旧表 (⚠️ 警告：这将清除所有数据！)
+DROP TABLE IF EXISTS public.chat_messages CASCADE;
+DROP TABLE IF EXISTS public.conversations CASCADE;
+DROP TABLE IF EXISTS public.models CASCADE;
+DROP TABLE IF EXISTS public.model_groups CASCADE;
+DROP TABLE IF EXISTS public.user_settings CASCADE;
+DROP TABLE IF EXISTS public.api_keys CASCADE;
+DROP TABLE IF EXISTS public.account_sessions CASCADE;
+DROP TABLE IF EXISTS public.accounts CASCADE;
 
--- 2.1 用户账户表 (accounts)
-CREATE TABLE IF NOT EXISTS public.accounts (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL PRIMARY KEY,
+-- =============================================================================
+-- 3. 表结构定义
+-- =============================================================================
+
+-- 3.1 用户账户表
+CREATE TABLE public.accounts (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
     email text NOT NULL UNIQUE,
-    password text NOT NULL, -- 存储加密后的哈希值 ($2a$...)
-    security_question text DEFAULT ''::text,
-    security_answer text DEFAULT ''::text,
+    password text NOT NULL, -- 存储哈希后的密码
+    security_question text,
+    security_answer text,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
 
--- 2.2 用户会话表 (account_sessions)
-CREATE TABLE IF NOT EXISTS public.account_sessions (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL PRIMARY KEY,
-    user_id uuid REFERENCES public.accounts(id) ON DELETE CASCADE,
-    email text NOT NULL,
-    token text NOT NULL, -- 简单的会话令牌
-    created_at timestamp with time zone DEFAULT now()
+-- 3.2 用户会话表
+CREATE TABLE public.account_sessions (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    email text,
+    token text NOT NULL UNIQUE,
+    created_at timestamp with time zone DEFAULT now(),
+    expires_at timestamp with time zone
 );
 
--- 2.3 用户备份数据表 (user_backups) - 用于云同步
-CREATE TABLE IF NOT EXISTS public.user_backups (
-    id uuid DEFAULT extensions.uuid_generate_v4() NOT NULL PRIMARY KEY,
-    user_id uuid REFERENCES public.accounts(id) ON DELETE CASCADE UNIQUE, -- 确保每个用户只有一条备份记录
-    backup_data jsonb NOT NULL, -- 存储所有聊天记录、配置的 JSON 数据
-    device_info text DEFAULT '', -- 记录最后上传的设备信息
-    app_version text DEFAULT '', -- 记录 App 版本
+-- 3.3 对话表
+CREATE TABLE public.conversations (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    title text NOT NULL,
+    last_message text,
+    last_message_time timestamp with time zone,
+    message_count int DEFAULT 0,
+    created_at timestamp with time zone DEFAULT now(),
+    updated_at timestamp with time zone DEFAULT now(),
+    is_deleted boolean DEFAULT false,
+    deleted_at timestamp with time zone
+);
+
+-- 3.4 消息表
+CREATE TABLE public.chat_messages (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    conversation_id uuid NOT NULL REFERENCES public.conversations(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    content text,
+    is_from_user boolean DEFAULT false,
+    timestamp timestamp with time zone,
+    is_error boolean DEFAULT false,
+    model_display_name text,
+    created_at timestamp with time zone DEFAULT now(),
+    is_deleted boolean DEFAULT false,
+    deleted_at timestamp with time zone
+);
+
+-- 3.5 模型分组表
+CREATE TABLE public.model_groups (
+    id text PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    name text NOT NULL,
+    base_url text NOT NULL,
+    api_key text NOT NULL,
+    provider_url text,
+    created_at bigint,
+    is_deleted boolean DEFAULT false,
+    deleted_at timestamp with time zone
+);
+
+-- 3.6 模型表
+CREATE TABLE public.models (
+    id text PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    group_id text NOT NULL,
+    name text NOT NULL,
+    model_name text NOT NULL,
+    remark text,
+    created_at bigint,
+    is_deleted boolean DEFAULT false,
+    deleted_at timestamp with time zone
+);
+
+-- 3.7 用户设置表
+CREATE TABLE public.user_settings (
+    user_id uuid PRIMARY KEY REFERENCES public.accounts(id) ON DELETE CASCADE,
+    selected_model_id text,
     updated_at timestamp with time zone DEFAULT now()
 );
 
--- 3. 数据迁移 (Migration)
--- [重要] 如果是现有数据库，将所有旧的明文密码转换为哈希值
--- 只有当密码不以 $2a$ 开头时才进行转换，防止重复哈希
-UPDATE public.accounts 
-SET password = extensions.crypt(password, extensions.gen_salt('bf'))
-WHERE password NOT LIKE '$2a$%';
+-- 3.8 API Keys 表
+CREATE TABLE public.api_keys (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id uuid NOT NULL REFERENCES public.accounts(id) ON DELETE CASCADE,
+    platform text NOT NULL,
+    api_key text NOT NULL,
+    created_at timestamp with time zone DEFAULT now()
+);
 
--- 4. 创建索引 (Indexes)
-CREATE INDEX IF NOT EXISTS idx_accounts_email ON public.accounts(email);
-CREATE INDEX IF NOT EXISTS idx_sessions_token ON public.account_sessions(token);
-CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON public.account_sessions(user_id);
-CREATE INDEX IF NOT EXISTS idx_backups_user_id ON public.user_backups(user_id);
+-- =============================================================================
+-- 4. 索引优化
+-- =============================================================================
 
--- 5. 核心业务函数 (RPC Functions)
+CREATE INDEX idx_accounts_email ON public.accounts(email);
+CREATE INDEX idx_sessions_token ON public.account_sessions(token);
+CREATE INDEX idx_conversations_user ON public.conversations(user_id);
+CREATE INDEX idx_messages_conv ON public.chat_messages(conversation_id);
+CREATE INDEX idx_model_groups_user ON public.model_groups(user_id);
+CREATE INDEX idx_models_user ON public.models(user_id);
+CREATE INDEX idx_user_settings_uid ON public.user_settings(user_id);
 
--- ----------------------------------------------------------------
--- 函数 1: 用户注册 (accounts_register)
--- ----------------------------------------------------------------
+-- =============================================================================
+-- 5. 权限与 RLS
+-- =============================================================================
+
+ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.account_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.model_groups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.models ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.api_keys ENABLE ROW LEVEL SECURITY;
+
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres;
+
+-- =============================================================================
+-- 6. 核心业务函数 (Accounts & Auth)
+-- =============================================================================
+
+-- 6.1 注册函数
+DROP FUNCTION IF EXISTS public.accounts_register(text, text, text, text);
+
 CREATE OR REPLACE FUNCTION public.accounts_register(
     p_email text, 
     p_password text,
@@ -66,13 +157,14 @@ CREATE OR REPLACE FUNCTION public.accounts_register(
 )
 RETURNS jsonb
 LANGUAGE plpgsql
-SECURITY DEFINER -- 使用定义者权限运行，绕过 RLS
+SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
   new_uid uuid;
   new_token text;
   existing_id uuid;
+  hashed_password text;
 BEGIN
   -- 1. 查重
   SELECT id INTO existing_id FROM public.accounts WHERE email = p_email LIMIT 1;
@@ -80,20 +172,19 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'message', '注册失败：该邮箱已被注册');
   END IF;
 
-  -- 2. 创建用户 (密码进行哈希加密)
+  -- 2. 密码哈希
+  hashed_password := crypt(p_password, gen_salt('bf'));
+
+  -- 3. 创建用户
   INSERT INTO public.accounts(email, password, security_question, security_answer)
-  VALUES (p_email, crypt(p_password, gen_salt('bf')), p_question, p_answer)
+  VALUES (p_email, hashed_password, p_question, p_answer)
   RETURNING id INTO new_uid;
 
-  -- 3. 创建 Session Token
+  -- 4. 创建 Token
   new_token := encode(gen_random_bytes(32), 'hex');
   
   INSERT INTO public.account_sessions(user_id, email, token)
   VALUES (new_uid, p_email, new_token);
-  
-  -- 4. 初始化空的备份记录
-  INSERT INTO public.user_backups(user_id, backup_data)
-  VALUES (new_uid, '{}'::jsonb);
   
   RETURN jsonb_build_object(
     'ok', true, 
@@ -107,9 +198,9 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- ----------------------------------------------------------------
--- 函数 2: 用户登录 (accounts_login)
--- ----------------------------------------------------------------
+-- 6.2 登录函数
+DROP FUNCTION IF EXISTS public.accounts_login(text, text);
+
 CREATE OR REPLACE FUNCTION public.accounts_login(p_email text, p_password text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -124,21 +215,18 @@ BEGIN
   SELECT id, password INTO v_uid, v_stored_pass 
   FROM public.accounts WHERE email = p_email LIMIT 1;
   
-  -- 验证哈希密码：crypt(输入密码, 存储的哈希) 应该等于 存储的哈希
+  -- 验证密码 (兼容明文和哈希)
+  -- 如果 v_stored_pass 不是哈希格式（旧数据），crypt 会报错或行为不一，但这里假设是新环境或已迁移
+  -- 为了健壮性，这里仅支持哈希验证
   IF v_uid IS NOT NULL AND v_stored_pass = crypt(p_password, v_stored_pass) THEN
     v_token := encode(gen_random_bytes(32), 'hex');
     
-    -- 刷新 Token
     DELETE FROM public.account_sessions WHERE user_id = v_uid;
     INSERT INTO public.account_sessions(user_id, email, token)
     VALUES (v_uid, p_email, v_token);
     
     RETURN jsonb_build_object(
-        'ok', true, 
-        'message', '登录成功', 
-        'user_id', v_uid, 
-        'email', p_email, 
-        'session_token', v_token
+        'ok', true, 'message', '登录成功', 'user_id', v_uid, 'email', p_email, 'session_token', v_token
     );
   ELSE
     RETURN jsonb_build_object('ok', false, 'message', '登录失败：账号或密码错误');
@@ -146,13 +234,32 @@ BEGIN
 END;
 $$;
 
--- ----------------------------------------------------------------
--- 函数 3: 通过密保重置密码 (accounts_reset_password_with_answer)
--- ----------------------------------------------------------------
+-- 6.3 获取密保
+DROP FUNCTION IF EXISTS public.accounts_get_security_question(text);
+
+CREATE OR REPLACE FUNCTION public.accounts_get_security_question(p_email text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+DECLARE
+  v_question text;
+BEGIN
+  SELECT security_question INTO v_question FROM public.accounts WHERE email = p_email LIMIT 1;
+  IF v_question IS NOT NULL AND v_question != '' THEN
+    RETURN jsonb_build_object('ok', true, 'question', v_question);
+  ELSE
+    RETURN jsonb_build_object('ok', false, 'message', '未找到该用户的安全问题');
+  END IF;
+END;
+$$;
+
+-- 6.4 重置密码
+DROP FUNCTION IF EXISTS public.accounts_reset_password_with_answer(text, text, text);
+
 CREATE OR REPLACE FUNCTION public.accounts_reset_password_with_answer(
-    p_email text, 
-    p_answer text, 
-    p_new_password text
+    p_email text, p_answer text, p_new_password text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -166,14 +273,8 @@ BEGIN
   SELECT id, security_answer INTO v_uid, v_real_answer FROM public.accounts WHERE email = p_email LIMIT 1;
   
   IF v_uid IS NOT NULL AND v_real_answer = p_answer THEN
-    -- 更新密码为新的哈希值
-    UPDATE public.accounts 
-    SET password = crypt(p_new_password, gen_salt('bf')), 
-        updated_at = now() 
-    WHERE id = v_uid;
-    
+    UPDATE public.accounts SET password = crypt(p_new_password, gen_salt('bf')), updated_at = now() WHERE id = v_uid;
     DELETE FROM public.account_sessions WHERE user_id = v_uid;
-    
     RETURN jsonb_build_object('ok', true, 'message', '密码重置成功，请重新登录');
   ELSE
     RETURN jsonb_build_object('ok', false, 'message', '验证失败：答案错误');
@@ -181,14 +282,11 @@ BEGIN
 END;
 $$;
 
--- ----------------------------------------------------------------
--- 函数 4: 更新安全问题 (accounts_update_security_question)
--- ----------------------------------------------------------------
+-- 6.5 更新密保
+DROP FUNCTION IF EXISTS public.accounts_update_security_question(text, text, text, text);
+
 CREATE OR REPLACE FUNCTION public.accounts_update_security_question(
-    p_email text, 
-    p_password text, 
-    p_new_question text, 
-    p_new_answer text
+    p_email text, p_password text, p_new_question text, p_new_answer text
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -199,16 +297,10 @@ DECLARE
   v_uid uuid;
   v_stored_pass text;
 BEGIN
-  SELECT id, password INTO v_uid, v_stored_pass 
-  FROM public.accounts WHERE email = p_email LIMIT 1;
-
-  -- 验证当前密码
+  SELECT id, password INTO v_uid, v_stored_pass FROM public.accounts WHERE email = p_email LIMIT 1;
+  
   IF v_uid IS NOT NULL AND v_stored_pass = crypt(p_password, v_stored_pass) THEN
-    UPDATE public.accounts 
-    SET security_question = p_new_question, 
-        security_answer = p_new_answer, 
-        updated_at = now() 
-    WHERE id = v_uid;
+    UPDATE public.accounts SET security_question = p_new_question, security_answer = p_new_answer, updated_at = now() WHERE id = v_uid;
     RETURN jsonb_build_object('ok', true, 'message', '安全问题已更新');
   ELSE
     RETURN jsonb_build_object('ok', false, 'message', '验证失败：密码错误');
@@ -216,12 +308,21 @@ BEGIN
 END;
 $$;
 
--- ----------------------------------------------------------------
--- 函数 5: 直接重置密码 (accounts_reset_password)
--- ----------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.accounts_reset_password(
-    p_email text, 
-    p_new_password text
+-- =============================================================================
+-- 7. 核心同步函数 (Sync)
+-- =============================================================================
+
+-- 清理可能存在的同名重载，避免 PostgREST 选择歧义
+DROP FUNCTION IF EXISTS public.sync_upload_backup(text, jsonb, boolean, boolean, boolean, boolean);
+DROP FUNCTION IF EXISTS public.sync_upload_backup(text, jsonb, boolean, boolean, boolean, boolean, jsonb);
+
+CREATE OR REPLACE FUNCTION public.sync_upload_backup_v1(
+    p_token text, 
+    p_data jsonb, 
+    p_sync_history boolean, 
+    p_sync_model_config boolean, 
+    p_sync_selected_model boolean, 
+    p_sync_api_key boolean
 )
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -229,107 +330,223 @@ SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
 DECLARE
-  v_uid uuid;
+  uid uuid;
+  res_conversations jsonb := '[]'::jsonb;
+  res_model_groups jsonb := '[]'::jsonb;
+  res_models jsonb := '[]'::jsonb;
+  res_selected_model_id text := null;
+  res_api_keys jsonb := '[]'::jsonb;
+  conv_record record;
+  conv_id uuid;
 BEGIN
-  SELECT id INTO v_uid FROM public.accounts WHERE email = p_email LIMIT 1;
-  
-  IF v_uid IS NOT NULL THEN
-    UPDATE public.accounts 
-    SET password = crypt(p_new_password, gen_salt('bf')), 
-        updated_at = now() 
-    WHERE id = v_uid;
-    
-    DELETE FROM public.account_sessions WHERE user_id = v_uid;
-    
-    RETURN jsonb_build_object('ok', true, 'message', '密码已重置');
-  ELSE
-    RETURN jsonb_build_object('ok', false, 'message', '用户不存在');
+  -- 1. 验证 Token
+  SELECT user_id INTO uid FROM public.account_sessions WHERE token = p_token;
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('ok', false, 'message', '无效会话或Token过期');
   END IF;
-END;
-$$;
 
--- ----------------------------------------------------------------
--- 函数 6: 同步 - 上传数据 (sync_upload_data)
--- ----------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.sync_upload_data(
-    p_user_id uuid,
-    p_backup_data jsonb,
-    p_device_info text DEFAULT ''
-)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, extensions
-AS $$
-BEGIN
-  -- 如果存在则更新，不存在则插入 (Upsert)
-  INSERT INTO public.user_backups (user_id, backup_data, device_info, updated_at)
-  VALUES (p_user_id, p_backup_data, p_device_info, now())
-  ON CONFLICT (user_id) 
-  DO UPDATE SET 
-    backup_data = EXCLUDED.backup_data,
-    device_info = EXCLUDED.device_info,
-    updated_at = now();
-    
-  RETURN jsonb_build_object('ok', true, 'message', '同步成功', 'timestamp', now());
+  -- A. 写入
+  IF p_sync_model_config THEN
+    INSERT INTO public.model_groups(user_id, id, name, base_url, api_key, provider_url, created_at, is_deleted, deleted_at)
+    SELECT 
+      uid, 
+      (g->>'id'), 
+      COALESCE(g->>'name', 'Unknown'), 
+      COALESCE(g->>'baseUrl', ''), 
+      COALESCE(g->>'apiKey', ''), 
+      (g->>'providerUrl'), 
+      COALESCE((g->>'createdAt')::bigint, 0),
+      COALESCE((g->>'isDeleted')::boolean, false),
+      CASE WHEN (g ? 'deletedAt') THEN to_timestamp((((g->>'deletedAt')::numeric)/1000)::double precision) ELSE NULL END
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_data->'modelGroups') = 'array' THEN p_data->'modelGroups' ELSE '[]'::jsonb END) AS g
+    WHERE (g->>'id') IS NOT NULL
+    ON CONFLICT (id) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      name = EXCLUDED.name,
+      base_url = EXCLUDED.base_url,
+      api_key = EXCLUDED.api_key,
+      provider_url = EXCLUDED.provider_url,
+      created_at = EXCLUDED.created_at,
+      is_deleted = EXCLUDED.is_deleted,
+      deleted_at = EXCLUDED.deleted_at;
+
+    INSERT INTO public.models(user_id, id, group_id, name, model_name, remark, created_at, is_deleted, deleted_at)
+    SELECT 
+      uid, 
+      (m->>'id'), 
+      (m->>'groupId'), 
+      COALESCE(m->>'name', 'Unknown'), 
+      COALESCE(m->>'modelName', ''), 
+      (m->>'remark'), 
+      COALESCE((m->>'createdAt')::bigint, 0),
+      COALESCE((m->>'isDeleted')::boolean, false),
+      CASE WHEN (m ? 'deletedAt') THEN to_timestamp((((m->>'deletedAt')::numeric)/1000)::double precision) ELSE NULL END
+    FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_data->'models') = 'array' THEN p_data->'models' ELSE '[]'::jsonb END) AS m
+    WHERE (m->>'id') IS NOT NULL
+    ON CONFLICT (id) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      group_id = EXCLUDED.group_id,
+      name = EXCLUDED.name,
+      model_name = EXCLUDED.model_name,
+      remark = EXCLUDED.remark,
+      created_at = EXCLUDED.created_at,
+      is_deleted = EXCLUDED.is_deleted,
+      deleted_at = EXCLUDED.deleted_at;
+  END IF;
+
+  IF p_sync_selected_model THEN
+    INSERT INTO public.user_settings(user_id, selected_model_id)
+    VALUES (uid, (p_data->>'selectedModelId'))
+    ON CONFLICT (user_id) DO UPDATE SET selected_model_id = EXCLUDED.selected_model_id, updated_at = now();
+  END IF;
+
+  IF p_sync_api_key THEN
+    IF (p_data ? 'apiKeys') AND jsonb_typeof(p_data->'apiKeys') = 'array' THEN
+      DELETE FROM public.api_keys WHERE user_id = uid;
+      INSERT INTO public.api_keys(user_id, platform, api_key)
+      SELECT uid, (k->>'platform'), (k->>'apiKey')
+      FROM jsonb_array_elements(p_data->'apiKeys') AS k;
+    END IF;
+  END IF;
+
+  IF p_sync_history THEN
+    FOR conv_record IN SELECT * FROM jsonb_array_elements(CASE WHEN jsonb_typeof(p_data->'conversations') = 'array' THEN p_data->'conversations' ELSE '[]'::jsonb END) LOOP
+        conv_id := NULL;
+        -- 尝试根据标题查找现有会话
+        SELECT id INTO conv_id FROM public.conversations WHERE user_id = uid AND title = (conv_record.value->>'title')::text LIMIT 1;
+        
+        IF conv_id IS NOT NULL THEN
+            UPDATE public.conversations SET
+                last_message = (conv_record.value->>'lastMessage'),
+                last_message_time = to_timestamp((((conv_record.value->>'lastMessageTime')::numeric)/1000)::double precision),
+                message_count = ((conv_record.value->>'messageCount')::int),
+                updated_at = now(),
+                is_deleted = COALESCE((conv_record.value->>'isDeleted')::boolean, false),
+                deleted_at = CASE WHEN (conv_record.value ? 'deletedAt') THEN to_timestamp((((conv_record.value->>'deletedAt')::numeric)/1000)::double precision) ELSE deleted_at END
+            WHERE id = conv_id;
+        ELSE
+            INSERT INTO public.conversations(user_id, title, last_message, last_message_time, message_count, is_deleted, deleted_at)
+            VALUES (uid, (conv_record.value->>'title'), (conv_record.value->>'lastMessage'),
+                to_timestamp((((conv_record.value->>'lastMessageTime')::numeric)/1000)::double precision), ((conv_record.value->>'messageCount')::int),
+                COALESCE((conv_record.value->>'isDeleted')::boolean, false),
+                CASE WHEN (conv_record.value ? 'deletedAt') THEN to_timestamp((((conv_record.value->>'deletedAt')::numeric)/1000)::double precision) ELSE NULL END)
+            RETURNING id INTO conv_id;
+        END IF;
+
+        IF COALESCE((conv_record.value->>'isDeleted')::boolean, false) THEN
+            CONTINUE;
+        END IF;
+
+        -- 插入消息 (避免重复)
+        -- 使用更宽松的去重条件，防止浮点数精度问题
+        INSERT INTO public.chat_messages(conversation_id, user_id, content, is_from_user, timestamp, is_error, model_display_name)
+        SELECT 
+          conv_id, 
+          uid, 
+          (m->>'content'), 
+          ((m->>'isFromUser')::boolean),
+          to_timestamp((((m->>'timestamp')::numeric)/1000)::double precision), 
+          COALESCE((m->>'isError')::boolean, false),
+          CASE WHEN (m ? 'modelDisplayName') THEN (m->>'modelDisplayName') ELSE NULL END
+        FROM jsonb_array_elements(conv_record.value->'messages') AS m
+        WHERE NOT EXISTS (
+            SELECT 1 FROM public.chat_messages cm 
+            WHERE cm.conversation_id = conv_id AND cm.user_id = uid 
+            -- 比较时间戳 (误差 10ms) 和 内容
+            AND abs(extract(epoch from cm.timestamp) - (((m->>'timestamp')::numeric)/1000)) < 0.01
+            AND cm.content = (m->>'content')
+        );
+
+        -- 更新已有消息的模型外显名称（如果之前为NULL且本次上传提供了值）
+        UPDATE public.chat_messages cm
+        SET model_display_name = (m->>'modelDisplayName')
+        FROM jsonb_array_elements(conv_record.value->'messages') AS m
+        WHERE cm.conversation_id = conv_id
+          AND cm.user_id = uid
+          AND cm.model_display_name IS NULL
+          AND (m ? 'modelDisplayName')
+          AND cm.content = (m->>'content')
+          AND cm.is_from_user = ((m->>'isFromUser')::boolean)
+          AND abs(extract(epoch from cm.timestamp) - (((m->>'timestamp')::numeric)/1000)) < 0.01;
+    END LOOP;
+  END IF;
+
+  -- B. 读取
+  SELECT COALESCE(jsonb_agg(
+       jsonb_build_object(
+         'id', c.id, 'title', c.title, 'lastMessage', c.last_message,
+         'lastMessageTime', (extract(epoch from c.last_message_time) * 1000)::bigint,
+         'messageCount', c.message_count,
+         'messages', (
+            SELECT COALESCE(jsonb_agg(
+              jsonb_build_object(
+                'content', m.content,
+                'isFromUser', m.is_from_user,
+                'timestamp', (extract(epoch from m.timestamp) * 1000)::bigint,
+                'isError', m.is_error,
+                'modelDisplayName', m.model_display_name
+              ) ORDER BY m.timestamp ASC
+            ), '[]'::jsonb) FROM public.chat_messages m WHERE m.conversation_id = c.id AND COALESCE(m.is_deleted, false) = false
+        )
+       ) ORDER BY c.last_message_time DESC
+  ), '[]'::jsonb) INTO res_conversations FROM public.conversations c WHERE c.user_id = uid AND COALESCE(c.is_deleted, false) = false;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'id', id, 'name', name, 'baseUrl', base_url, 'apiKey', api_key, 'providerUrl', provider_url, 'createdAt', created_at,
+      'isDeleted', is_deleted, 'deletedAt', CASE WHEN deleted_at IS NOT NULL THEN (extract(epoch from deleted_at) * 1000)::bigint ELSE NULL END
+  )), '[]'::jsonb) INTO res_model_groups FROM public.model_groups WHERE user_id = uid AND COALESCE(is_deleted, false) = false;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+      'id', id, 'groupId', group_id, 'name', name, 'modelName', model_name, 'remark', remark, 'createdAt', created_at,
+      'isDeleted', is_deleted, 'deletedAt', CASE WHEN deleted_at IS NOT NULL THEN (extract(epoch from deleted_at) * 1000)::bigint ELSE NULL END
+  )), '[]'::jsonb) INTO res_models FROM public.models WHERE user_id = uid AND COALESCE(is_deleted, false) = false;
+
+  SELECT selected_model_id INTO res_selected_model_id FROM public.user_settings WHERE user_id = uid;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('platform', platform, 'apiKey', api_key)), '[]'::jsonb) INTO res_api_keys FROM public.api_keys WHERE user_id = uid;
+
+  RETURN jsonb_build_object(
+    'ok', true, 'message', '同步成功',
+    'conversations', res_conversations, 'modelGroups', res_model_groups,
+    'models', res_models, 'selectedModelId', res_selected_model_id, 'apiKeys', res_api_keys
+  );
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('ok', false, 'message', '同步失败: ' || SQLERRM);
 END;
 $$;
 
--- ----------------------------------------------------------------
--- 函数 7: 同步 - 下载数据 (sync_download_data)
--- ----------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.sync_download_data(p_user_id uuid)
+-- 7.2 下载备份 (辅助函数)
+DROP FUNCTION IF EXISTS public.sync_download_backup(text);
+
+CREATE OR REPLACE FUNCTION public.sync_download_backup_v1(p_token text)
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public, extensions
 AS $$
-DECLARE
-  v_data jsonb;
-  v_time timestamp with time zone;
 BEGIN
-  SELECT backup_data, updated_at INTO v_data, v_time 
-  FROM public.user_backups WHERE user_id = p_user_id;
-  
-  IF v_data IS NOT NULL THEN
-    -- 返回数据给客户端
-    RETURN jsonb_build_object('ok', true, 'data', v_data, 'updated_at', v_time);
-  ELSE
-    RETURN jsonb_build_object('ok', false, 'message', '无备份数据');
-  END IF;
+  RETURN public.sync_upload_backup_v1(p_token, '{}'::jsonb, false, false, false, false);
 END;
 $$;
 
--- 6. 安全策略 (RLS & Grants)
+-- =============================================================================
+-- 8. 授权 (Grant Executions)
+-- =============================================================================
 
--- 启用 RLS
-ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.account_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_backups ENABLE ROW LEVEL SECURITY;
+-- 设置所有者 (Owner)
+ALTER FUNCTION public.accounts_register(text, text, text, text) OWNER TO postgres;
+ALTER FUNCTION public.accounts_login(text, text) OWNER TO postgres;
+ALTER FUNCTION public.accounts_get_security_question(text) OWNER TO postgres;
+ALTER FUNCTION public.accounts_reset_password_with_answer(text, text, text) OWNER TO postgres;
+ALTER FUNCTION public.accounts_update_security_question(text, text, text, text) OWNER TO postgres;
+ALTER FUNCTION public.sync_upload_backup_v1(text, jsonb, boolean, boolean, boolean, boolean) OWNER TO postgres;
+ALTER FUNCTION public.sync_download_backup_v1(text) OWNER TO postgres;
 
--- 默认拒绝所有直接的表访问 (因为我们完全通过 RPC 函数来操作)
-CREATE POLICY "Deny all public access to accounts" ON public.accounts FOR ALL USING (false);
-CREATE POLICY "Deny all public access to sessions" ON public.account_sessions FOR ALL USING (false);
-CREATE POLICY "Deny all public access to backups" ON public.user_backups FOR ALL USING (false);
-
--- 授予权限
--- 允许匿名(anon)和登录(authenticated)用户调用 RPC 函数
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-
--- 授予表的操作权限给 service_role (RPC 函数以 SECURITY DEFINER 运行时使用此权限)
-GRANT ALL ON TABLE public.accounts TO service_role;
-GRANT ALL ON TABLE public.account_sessions TO service_role;
-GRANT ALL ON TABLE public.user_backups TO service_role;
-
--- 授予函数执行权限
-GRANT EXECUTE ON FUNCTION public.accounts_register TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.accounts_login TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.accounts_reset_password_with_answer TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.accounts_update_security_question TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.accounts_reset_password TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.sync_upload_data TO anon, authenticated, service_role;
-GRANT EXECUTE ON FUNCTION public.sync_download_data TO anon, authenticated, service_role;
-
--- 脚本结束
+-- 授权执行 (Grant Execute)
+GRANT EXECUTE ON FUNCTION public.accounts_register(text, text, text, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.accounts_login(text, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.accounts_get_security_question(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.accounts_reset_password_with_answer(text, text, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.accounts_update_security_question(text, text, text, text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.sync_upload_backup_v1(text, jsonb, boolean, boolean, boolean, boolean) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.sync_download_backup_v1(text) TO anon, authenticated, service_role;
