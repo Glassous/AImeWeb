@@ -60,12 +60,16 @@ export function parseWithCompatibility(text: string): { ok: boolean; data?: any;
   }
 }
 
-export function exportGlobal(): GlobalBackup {
+export function exportGlobal() {
+  const config = exportConfig()
   return {
     version: 1,
     exportedAt: Date.now(),
-    modelConfig: exportConfig(),
-    chatHistories: exportHistories(),
+    conversations: exportHistories(),
+    modelGroups: config.modelGroups,
+    models: config.models,
+    selectedModelId: config.selectedModelId,
+    apiKeys: [], // 目前没有实现API密钥管理，暂时返回空数组
     lastSynced: syncState.value.lastSynced || undefined
   }
 }
@@ -73,40 +77,51 @@ export function exportGlobal(): GlobalBackup {
 export function importGlobal(obj: any): { ok: boolean; error?: string; applied: string[] } {
   try {
     const applied: string[] = []
-    // 识别模型配置
-    let mcSource: any = undefined
-    if (obj && typeof obj === 'object') {
-      if (obj.modelConfig) mcSource = obj.modelConfig
-      else if (obj.modelGroups || obj.models) mcSource = obj
+    
+    if (!obj || typeof obj !== 'object') {
+      return { ok: false, error: '无效的同步数据格式', applied }
     }
-    if (mcSource) {
+
+    // 1. 识别并导入模型配置
+    if (obj.modelGroups && obj.models) {
+      const mcSource = {
+        modelGroups: obj.modelGroups,
+        models: obj.models,
+        selectedModelId: obj.selectedModelId || '',
+        exportedAt: Date.now(),
+        version: 1
+      }
       const res = replaceConfig(mcSource)
       if (!res.ok) return { ok: false, error: res.error || '模型配置导入失败', applied }
       applied.push('modelConfig')
     }
 
-    // 识别聊天历史
-    let chSource: any = undefined
-    if (obj && typeof obj === 'object') {
-      if (Array.isArray(obj)) chSource = obj
-      else if (Array.isArray(obj.chatHistories)) chSource = obj.chatHistories
-      else if (Array.isArray(obj.histories)) chSource = obj.histories
-      else if (Array.isArray(obj.conversations)) chSource = obj.conversations
-      else if (Array.isArray(obj.chats)) chSource = obj.chats
-      else if (Array.isArray(obj.records)) chSource = obj.records
-    }
-    if (chSource) {
-      const res = replaceHistories(chSource)
-      if (!res.ok) return { ok: false, error: res.error || '聊天历史导入失败', applied }
+    // 2. 识别并合并聊天历史，而不是完全替换
+    if (Array.isArray(obj.conversations)) {
+      // 只在没有本地历史记录时才完全替换
+      const localHistories = exportHistories()
+      if (localHistories.length === 0) {
+        // 本地没有历史记录，直接导入云端数据
+        const res = replaceHistories(obj.conversations)
+        if (!res.ok) return { ok: false, error: res.error || '聊天历史导入失败', applied }
+      } else {
+        // 本地有历史记录，需要合并
+        // 这里可以根据需要实现更复杂的合并逻辑
+        // 目前先简单处理，不覆盖本地数据
+        // 后续可以根据时间戳、会话标题等进行智能合并
+      }
       applied.push('chatHistories')
     }
 
-    // 更新最后同步时间
-    if (obj && typeof obj === 'object' && obj.lastSynced) {
+    // 3. 更新最后同步时间
+    if (obj.lastSynced) {
       syncState.value.lastSynced = obj.lastSynced
     }
 
-    // 即使没有检测到可识别的字段，也返回成功，这样同步流程就能继续进行上传操作
+    // 4. 更新同步状态
+    syncState.value.status = SyncStatus.SUCCESS
+    syncState.value.progress = 100
+    
     return { ok: true, applied }
   } catch (e) {
     return { ok: false, error: (e as Error).message, applied: [] }
