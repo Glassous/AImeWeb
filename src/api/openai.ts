@@ -7,6 +7,26 @@ function stripTrailingSlashes(url: string): string {
   return (url || '').replace(/\/+$/, '')
 }
 
+// 检测并修复base url中"/chat/completions"端点的辅助函数
+async function checkAndFixChatCompletionsEndpoint(baseUrl: string): Promise<string> {
+  // 先尝试原始base url
+  const originalUrl = `${baseUrl}/chat/completions`
+  
+  // 如果base url已经包含"/chat/completions"，尝试移除它
+  if (baseUrl.includes('/chat/completions')) {
+    const fixedUrl = `${baseUrl.replace('/chat/completions', '')}/chat/completions`
+    return fixedUrl
+  }
+  
+  // 检查是否需要添加"/v1"前缀
+  if (!baseUrl.includes('/v1')) {
+    const v1Url = `${baseUrl}/v1/chat/completions`
+    return v1Url
+  }
+  
+  return originalUrl
+}
+
 async function readError(resp: Response): Promise<string> {
   try {
     const text = await resp.text()
@@ -95,12 +115,25 @@ export async function reply(message: string, options: OpenAIReplyOptions = {}): 
   if (sys) messages.push({ role: 'system', content: sys })
   messages.push({ role: 'user', content: trimmed })
   const chatBody = { model, messages }
-  const resp2 = await fetch(`${baseUrl}/chat/completions`, {
+  
+  // 先尝试原始URL
+  let resp2 = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers,
     body: JSON.stringify(chatBody),
   })
-  if (!resp2.ok) throw new Error(await readError(resp2))
+  
+  // 如果失败，尝试修复URL并重新请求
+  if (!resp2.ok) {
+    const fixedUrl = await checkAndFixChatCompletionsEndpoint(baseUrl)
+    resp2 = await fetch(fixedUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(chatBody),
+    })
+    if (!resp2.ok) throw new Error(await readError(resp2))
+  }
+  
   const json2 = await resp2.json()
   const text2 = extractTextFromResponse(json2)
   if (text2 && text2.trim()) return text2
@@ -150,10 +183,23 @@ export async function replyConversation(
   const messages: any[] = []
   if (sys) messages.push({ role: 'system', content: sys })
   for (const m of conversation) messages.push({ role: m.role === 'system' ? 'system' : (m.role === 'assistant' ? 'assistant' : 'user'), content: m.content })
-  const resp2 = await fetch(`${baseUrl}/chat/completions`, {
+  
+  // 先尝试原始URL
+  let resp2 = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST', headers, body: JSON.stringify({ model, messages })
   })
-  if (!resp2.ok) throw new Error(await readError(resp2))
+  
+  // 如果失败，尝试修复URL并重新请求
+  if (!resp2.ok) {
+    const fixedUrl = await checkAndFixChatCompletionsEndpoint(baseUrl)
+    resp2 = await fetch(fixedUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, messages })
+    })
+    if (!resp2.ok) throw new Error(await readError(resp2))
+  }
+  
   const json2 = await resp2.json()
   const text2 = extractTextFromResponse(json2)
   if (text2 && text2.trim()) return text2
@@ -242,10 +288,23 @@ export async function replyStream(conversation: ConversationMessage[], options: 
   // 1) 尝试 Chat Completions 流式
   try {
     const messages = toChatCompletionMessages(conversation, sys)
-    const resp = await fetch(`${baseUrl}/chat/completions`, {
+    
+    // 先尝试原始URL
+    let resp = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST', headers,
       body: JSON.stringify({ model, messages, stream: true })
     })
+    
+    // 如果失败，尝试修复URL并重新请求
+    if (!resp.ok) {
+      const fixedUrl = await checkAndFixChatCompletionsEndpoint(baseUrl)
+      resp = await fetch(fixedUrl, {
+        method: 'POST', headers,
+        body: JSON.stringify({ model, messages, stream: true })
+      })
+      if (!resp.ok) throw new Error(await readError(resp))
+    }
+    
     const full = await readSSE(resp, (obj) => {
       const d = obj?.choices?.[0]?.delta?.content
       return typeof d === 'string' ? d : null
