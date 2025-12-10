@@ -6,6 +6,7 @@ import { themeStore } from '../store/theme'
 import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 
 import { renderMarkdown } from '../utils/markdown'
+import hljs from 'highlight.js'
 
 const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
@@ -17,6 +18,73 @@ const inputText = ref('')
 const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
 const isGenerating = ref(false)
+
+// 代码块预览状态管理
+const isPreviewOpen = ref(false)
+const previewCodeId = ref<string | null>(null)
+const previewCodeContent = ref<string>('')
+const previewCodeLanguage = ref<string>('')
+const expandedCodeBlocks = ref<string[]>([])
+
+// 预览模式：code 或 preview
+const previewMode = ref<'code' | 'preview'>('code')
+
+// 检测代码是否包含 HTML 标签
+function isHtmlCode(code: string, language: string): boolean {
+  if (language.toLowerCase() === 'html') {
+    return true
+  }
+  // 检测是否包含 HTML 标签或 DOCTYPE
+  const htmlRegex = /<(!DOCTYPE|html|head|body|div|span|p|h[1-6]|script|style|link|meta|title|a|img|table|tr|td|th|ul|ol|li|input|button|form|select|option|textarea|label|br|hr|b|i|u|strong|em|code|pre|blockquote|header|footer|nav|section|article|aside|main|figure|figcaption|video|audio|canvas|svg|iframe|embed|object|param|source|track|map|area|base|col|colgroup|dd|dl|dt|fieldset|legend|optgroup|output|progress|ruby|rt|rp|samp|small|sub|sup|template|time|var|wbr)\b/i
+  return htmlRegex.test(code)
+}
+
+// 处理代码块折叠/展开
+function toggleCodeBlock(codeId: string) {
+  if (isPreviewOpen.value) {
+    // 预览时只允许折叠，不允许展开
+    if (expandedCodeBlocks.value.includes(codeId)) {
+      expandedCodeBlocks.value = expandedCodeBlocks.value.filter(id => id !== codeId)
+    }
+  } else {
+    // 正常模式下可以展开/折叠
+    if (expandedCodeBlocks.value.includes(codeId)) {
+      expandedCodeBlocks.value = expandedCodeBlocks.value.filter(id => id !== codeId)
+    } else {
+      expandedCodeBlocks.value.push(codeId)
+    }
+  }
+}
+
+// 高亮预览区域的代码
+function highlightPreviewCode() {
+  if (!isPreviewOpen.value || previewMode.value !== 'code') return
+  
+  nextTick(() => {
+    const previewCodeEl = document.querySelector('.code-preview .preview-code code') as HTMLElement | null
+    if (previewCodeEl) {
+      hljs.highlightElement(previewCodeEl)
+    }
+  })
+}
+
+// 打开代码预览
+function openCodePreview(codeId: string, content: string, language: string) {
+  previewCodeId.value = codeId
+  previewCodeContent.value = content
+  previewCodeLanguage.value = language
+  previewMode.value = 'code' // 默认使用代码模式
+  isPreviewOpen.value = true
+  
+  // 高亮预览区域的代码
+  highlightPreviewCode()
+}
+
+// 关闭代码预览
+function closeCodePreview() {
+  isPreviewOpen.value = false
+  previewCodeId.value = null
+}
 
 // 复制提示（Toast）
 const showCopyToast = ref(false)
@@ -325,17 +393,62 @@ async function applyEditAndResend() {
   }
 }
 
-// 事件委托：处理代码块复制按钮点击
+// 事件委托：处理代码块相关按钮点击
 function onMessageClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target) return
-  const btn = target.closest('.code-copy-btn') as HTMLElement | null
-  if (btn) {
-    const wrapper = btn.parentElement
+  
+  // 处理复制按钮点击
+  const copyBtn = target.closest('.code-copy-btn') as HTMLElement | null
+  if (copyBtn) {
+    const wrapper = copyBtn.closest('.code-block') as HTMLElement | null
     const codeEl = wrapper?.querySelector('pre > code') as HTMLElement | null
     const codeText = codeEl?.textContent || ''
     copy(codeText)
+    return
   }
+  
+  // 处理折叠/展开按钮点击
+  const toggleBtn = target.closest('.code-toggle-btn') as HTMLElement | null
+  if (toggleBtn) {
+    const wrapper = toggleBtn.closest('.code-block') as HTMLElement | null
+    const codeBlockId = wrapper?.getAttribute('data-code-block-id')
+    if (codeBlockId) {
+      toggleCodeBlock(codeBlockId)
+    }
+    return
+  }
+  
+  // 处理查看按钮点击
+  const viewBtn = target.closest('.code-view-btn') as HTMLElement | null
+  if (viewBtn) {
+    const wrapper = viewBtn.closest('.code-block') as HTMLElement | null
+    const codeBlockId = viewBtn.getAttribute('data-code-block-id')
+    const language = viewBtn.getAttribute('data-code-language') || ''
+    const codeEl = wrapper?.querySelector('pre > code') as HTMLElement | null
+    const codeText = codeEl?.textContent || ''
+    if (codeBlockId && codeText) {
+      openCodePreview(codeBlockId, codeText, language)
+    }
+    return
+  }
+}
+
+// 更新代码块展开状态
+function updateCodeBlockExpansion() {
+  if (!messagesEl.value) return
+  
+  // 移除所有展开状态
+  const allCodeBlocks = messagesEl.value.querySelectorAll('.code-block')
+  allCodeBlocks.forEach(block => {
+    block.classList.remove('expanded')
+  })
+  
+  // 添加当前展开状态
+  expandedCodeBlocks.value.forEach(codeId => {
+    const codeBlock = messagesEl.value?.querySelector(`[data-code-block-id="${codeId}"]`)
+    codeBlock?.classList.add('expanded')
+  })
 }
 
 // 首次进入主页时显示“新对话”状态
@@ -343,7 +456,30 @@ onMounted(() => {
   chatStore.startDraft()
   // 绑定点击事件，用于复制代码块
   try { messagesEl.value?.addEventListener('click', onMessageClick) } catch (_) {}
-
+  
+  // 初始调用一次，确保代码块默认折叠
+  nextTick(() => {
+    updateCodeBlockExpansion()
+  })
+  
+  // 监听消息变化，更新代码块展开状态
+  watch(() => activeChat.value?.messages, () => {
+    nextTick(() => {
+      updateCodeBlockExpansion()
+    })
+  }, { deep: true })
+  
+  // 监听展开状态变化，更新代码块
+  watch(expandedCodeBlocks, () => {
+    updateCodeBlockExpansion()
+  })
+  
+  // 监听预览模式变化，当切换到代码模式时重新高亮
+  watch(previewMode, (newMode) => {
+    if (newMode === 'code') {
+      highlightPreviewCode()
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -356,164 +492,227 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 </script>
 
 <template>
-  <section class="chat-main">
-    <header class="topbar">
-      <button class="menu-btn" aria-label="菜单" title="菜单" @click="props.toggleSidebar">
-        <svg v-if="!isOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        </svg>
-      </button>
-      <button class="model-btn" :title="selectedLabel" @click.stop="openModelSelector">
-        {{ selectedLabel }}
-      </button>
-      <div class="spacer"></div>
-      <button class="theme-btn" :aria-label="'主题：' + themeMode" :title="'主题：' + themeMode" @click="themeStore.cycle()">
-        <svg v-if="themeMode === 'system'" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2"/>
-          <rect x="9" y="17" width="6" height="2" fill="currentColor"/>
-        </svg>
-        <svg v-else-if="themeMode === 'light'" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="4" fill="currentColor"/>
-          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
-        </svg>
-        <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M20 12a8 8 0 1 1-8-8 6 6 0 0 0 8 8z" fill="currentColor"/>
-        </svg>
-      </button>
-    </header>
-
-    <div class="scroll" ref="messagesEl">
-      <div class="messages">
-        <div v-if="!activeChat || activeChat.messages.length === 0" class="empty">
-          有什么可以帮忙的？
-        </div>
-        <div v-else>
-          <div
-            v-for="(m, i) in activeChat.messages"
-            :key="i"
-            class="msg"
-            :class="[m.isFromUser ? 'user' : 'ai', m.isError ? 'error' : '']"
-          >
-            <template v-if="m.isFromUser">
-              <div class="bubble-wrap">
-                <div class="bubble">{{ m.content }}</div>
-        <div class="inline-actions">
-          <button class="edit-inline" aria-label="编辑并重新发送" title="编辑并重新发送" @click="openEdit(i, m.content)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M4 16l1-4 9-9 4 4-9 9-4 1z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
-              <path d="M12 5l4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-            </svg>
-          </button>
-          <button class="copy-inline" aria-label="复制" title="复制" @click="copy(m.content)">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-              <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-            </svg>
-          </button>
-        </div>
-              </div>
-            </template>
-            <template v-else>
-              <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
-              <div class="actions">
-                <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                    <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
-                  </svg>
-                </button>
-                <button class="resend-ai" aria-label="重新发送" title="重新发送该条回复" @click="resend(i)">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M12 5a7 7 0 1 1-6.9 8.3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-                    <path d="M7 4v4h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-                  </svg>
-                </button>
-                <span v-if="m.modelDisplayName" class="model-info" title="使用的模型">{{ m.modelDisplayName }}</span>
-              </div>
-            </template>
-          </div>
-        </div>
-    </div>
-    </div>
-
-    <div v-if="showCopyToast" class="toast-layer" aria-live="polite">
-      <div class="toast">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
-          <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>{{ copyToastText }}</span>
-      </div>
-    </div>
-
-    <footer class="inputbar">
-      <textarea
-        v-model="inputText"
-        class="input"
-        placeholder="输入消息，按下发送"
-        rows="1"
-        @keydown.enter.exact.prevent="!isGenerating && sendMessage()"
-      ></textarea>
-      <button class="send-btn" :disabled="isGenerating" @click="sendMessage">
-        <span v-if="!isGenerating">发送</span>
-        <span class="loading" v-else>
-          <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity="0.25"/>
-            <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+  <div class="chat-container">
+    <!-- 主聊天区域 -->
+    <section class="chat-main" :class="{ 'preview-open': isPreviewOpen }">
+      <header class="topbar">
+        <button class="menu-btn" aria-label="菜单" title="菜单" @click="props.toggleSidebar">
+          <svg v-if="!isOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
-          正在回复…
-        </span>
-      </button>
-    </footer>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+        <button class="model-btn" :title="selectedLabel" @click.stop="openModelSelector">
+          {{ selectedLabel }}
+        </button>
+        <div class="spacer"></div>
+        <button class="theme-btn" :aria-label="'主题：' + themeMode" :title="'主题：' + themeMode" @click="themeStore.cycle()">
+          <svg v-if="themeMode === 'system'" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2"/>
+            <rect x="9" y="17" width="6" height="2" fill="currentColor"/>
+          </svg>
+          <svg v-else-if="themeMode === 'light'" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="4" fill="currentColor"/>
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20 12a8 8 0 1 1-8-8 6 6 0 0 0 8 8z" fill="currentColor"/>
+          </svg>
+        </button>
+      </header>
 
-    <div v-if="showModelModal" class="modal-mask" @click.self="closeModelSelector">
-      <div class="modal">
-        <div class="modal-title">选择模型</div>
-        <div class="modal-body">
-          <div v-if="groups.length === 0" class="empty">暂无模型组，请在设置页添加。</div>
-          <div v-else class="group-list">
-            <div class="group" v-for="g in groups" :key="g.id">
-              <div class="group-title">{{ g.name }}</div>
-              <div class="model-list">
-                <button
-                  v-for="m in listModelsInGroup(g.id)"
-                  :key="m.id"
-                  class="model-item"
-                  :class="[m.id === selectedId ? 'active' : '']"
-                  @click="chooseModel(m.id)"
-                >
-                  {{ m.name || m.modelName }}
-                </button>
+      <div class="scroll" ref="messagesEl">
+        <div class="messages">
+          <div v-if="!activeChat || activeChat.messages.length === 0" class="empty">
+            有什么可以帮忙的？
+          </div>
+          <div v-else>
+            <div
+              v-for="(m, i) in activeChat.messages"
+              :key="i"
+              class="msg"
+              :class="[m.isFromUser ? 'user' : 'ai', m.isError ? 'error' : '']"
+            >
+              <template v-if="m.isFromUser">
+                <div class="bubble-wrap">
+                  <div class="bubble">{{ m.content }}</div>
+          <div class="inline-actions">
+            <button class="edit-inline" aria-label="编辑并重新发送" title="编辑并重新发送" @click="openEdit(i, m.content)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 16l1-4 9-9 4 4-9 9-4 1z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+                <path d="M12 5l4 4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button class="copy-inline" aria-label="复制" title="复制" @click="copy(m.content)">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+              </svg>
+            </button>
+          </div>
+                </div>
+              </template>
+              <template v-else>
+                <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
+                <div class="actions">
+                  <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="9" y="9" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                      <rect x="5" y="3" width="10" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/>
+                    </svg>
+                  </button>
+                  <button class="resend-ai" aria-label="重新发送" title="重新发送该条回复" @click="resend(i)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 5a7 7 0 1 1-6.9 8.3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+                      <path d="M7 4v4h4" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                  <span v-if="m.modelDisplayName" class="model-info" title="使用的模型">{{ m.modelDisplayName }}</span>
+                </div>
+              </template>
+            </div>
+          </div>
+      </div>
+      </div>
+
+      <div v-if="showCopyToast" class="toast-layer" aria-live="polite">
+        <div class="toast">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
+            <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>{{ copyToastText }}</span>
+        </div>
+      </div>
+
+      <footer class="inputbar">
+        <textarea
+          v-model="inputText"
+          class="input"
+          placeholder="输入消息，按下发送"
+          rows="1"
+          @keydown.enter.exact.prevent="!isGenerating && sendMessage()"
+        ></textarea>
+        <button class="send-btn" :disabled="isGenerating" @click="sendMessage">
+          <span v-if="!isGenerating">发送</span>
+          <span class="loading" v-else>
+            <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity="0.25"/>
+              <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            正在回复…
+          </span>
+        </button>
+      </footer>
+
+      <div v-if="showModelModal" class="modal-mask" @click.self="closeModelSelector">
+        <div class="modal">
+          <div class="modal-title">选择模型</div>
+          <div class="modal-body">
+            <div v-if="groups.length === 0" class="empty">暂无模型组，请在设置页添加。</div>
+            <div v-else class="group-list">
+              <div class="group" v-for="g in groups" :key="g.id">
+                <div class="group-title">{{ g.name }}</div>
+                <div class="model-list">
+                  <button
+                    v-for="m in listModelsInGroup(g.id)"
+                    :key="m.id"
+                    class="model-item"
+                    :class="[m.id === selectedId ? 'active' : '']"
+                    @click="chooseModel(m.id)"
+                  >
+                    {{ m.name || m.modelName }}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" @click="closeModelSelector">关闭</button>
+          <div class="modal-actions">
+            <button class="btn" @click="closeModelSelector">关闭</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div v-if="showEditModal" class="modal-mask" @click.self="closeEditModal">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-title">编辑消息</div>
-        <div class="modal-body">
-          <textarea v-model="editDraft" class="edit-input" rows="6" placeholder="在此修改您的消息"></textarea>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" @click="closeEditModal">取消</button>
-          <button class="btn primary" @click="applyEditAndResend">更新并重新发送</button>
+      <div v-if="showEditModal" class="modal-mask" @click.self="closeEditModal">
+        <div class="modal" role="dialog" aria-modal="true">
+          <div class="modal-title">编辑消息</div>
+          <div class="modal-body">
+            <textarea v-model="editDraft" class="edit-input" rows="6" placeholder="在此修改您的消息"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button class="btn" @click="closeEditModal">取消</button>
+            <button class="btn primary" @click="applyEditAndResend">更新并重新发送</button>
+          </div>
         </div>
       </div>
+    </section>
+    
+    <!-- 代码预览面板 -->
+    <div v-if="isPreviewOpen" class="code-preview">
+      <div class="preview-header">
+        <h3>代码预览</h3>
+        <div class="preview-language">{{ previewCodeLanguage }}</div>
+        
+        <!-- 预览/代码切换按钮 -->
+        <div v-if="isHtmlCode(previewCodeContent, previewCodeLanguage)" class="preview-mode-toggle">
+          <button 
+            class="mode-btn" 
+            :class="{ active: previewMode === 'code' }" 
+            @click="previewMode = 'code'"
+          >
+            代码
+          </button>
+          <button 
+            class="mode-btn" 
+            :class="{ active: previewMode === 'preview' }" 
+            @click="previewMode = 'preview'"
+          >
+            预览
+          </button>
+        </div>
+        
+        <button class="preview-close-btn" @click="closeCodePreview" aria-label="关闭预览">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
+      </div>
+      <div class="preview-content">
+        <!-- 代码模式 -->
+        <pre v-if="previewMode === 'code'" class="preview-code"><code :class="`language-${previewCodeLanguage} hljs`">{{ previewCodeContent }}</code></pre>
+        
+        <!-- 预览模式 -->
+        <div v-else class="html-preview" v-html="previewCodeContent"></div>
+      </div>
     </div>
-  </section>
+  </div>
 </template>
 
 <style scoped>
-.chat-main { display: flex; flex-direction: column; height: 100%; }
+/* 聊天容器 */
+.chat-container {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 主聊天区域 */
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  transition: width 0.3s ease;
+  flex-shrink: 0;
+}
+
+/* 预览打开时，主聊天区域宽度调整为50% */
+.chat-main.preview-open {
+  width: calc(100% - 50%);
+}
+
 .topbar {
   position: sticky; top: 0; z-index: 2;
   display: flex; align-items: center; justify-content: flex-start; gap: 8px;
@@ -627,15 +826,317 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .markdown pre code { border: none; padding: 0; background: transparent; font-size: 0.9em; display: block; }
 
-/* 代码块复制按钮 */
-.markdown .code-block { position: relative; }
-.markdown .code-copy-btn {
-  position: absolute; top: 6px; right: 8px;
-  padding: 2px 8px; border-radius: 6px; background: var(--btn-bg); border: 1px solid var(--btn-border);
-  color: var(--text); cursor: pointer; font-size: 12px; line-height: 20px;
-  opacity: 0.6; transition: opacity 0.15s ease-in-out; z-index: 1;
+/* 代码块样式 */
+.markdown .code-block {
+  position: relative;
+  margin: 0 0 10px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  overflow: hidden;
 }
-.markdown .code-block:hover .code-copy-btn { opacity: 1; }
+
+/* 代码块头部 */
+.markdown .code-block-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--hover);
+  border-bottom: 1px solid var(--btn-border);
+}
+
+/* 代码语言显示 */
+.markdown .code-language {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+/* 代码块按钮通用样式 */
+.markdown .code-toggle-btn,
+.markdown .code-view-btn,
+.markdown .code-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  padding: 0;
+}
+
+.markdown .code-toggle-btn:hover,
+.markdown .code-view-btn:hover,
+.markdown .code-copy-btn:hover {
+  background: var(--bg);
+  opacity: 1;
+}
+
+/* 代码块按钮定位 */
+.markdown .code-toggle-btn,
+.markdown .code-view-btn,
+.markdown .code-copy-btn {
+  position: static;
+  opacity: 1;
+  margin-left: auto;
+}
+
+/* 代码内容区域 */
+.markdown .code-content {
+  max-height: 200px;
+  overflow: hidden;
+  transition: max-height 0.3s ease-in-out;
+}
+
+/* 展开状态 */
+.markdown .code-block.expanded .code-content {
+  max-height: 2000px;
+}
+
+/* 折叠/展开按钮旋转动画 */
+.markdown .code-toggle-btn svg {
+  transition: transform 0.3s ease-in-out;
+}
+
+.markdown .code-block.expanded .code-toggle-btn svg {
+  transform: rotate(180deg);
+}
+
+/* 代码预览面板 */
+.code-preview {
+  width: 50%;
+  height: 100%;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -4px 0 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+  animation: slideInRight 0.3s ease-in-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 预览面板头部 */
+.preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: var(--hover);
+  border-bottom: 1px solid var(--btn-border);
+  flex-shrink: 0;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.preview-language {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-right: auto;
+}
+
+/* 预览模式切换按钮 */
+.preview-mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  padding: 2px;
+}
+
+.mode-btn {
+  padding: 4px 12px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease-in-out;
+}
+
+.mode-btn.active {
+  background: var(--primary);
+  color: white;
+}
+
+.mode-btn:hover {
+  background: var(--hover);
+}
+
+.mode-btn.active:hover {
+  background: var(--primary);
+}
+
+.preview-close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  padding: 0;
+  margin-left: auto;
+}
+
+.preview-close-btn:hover {
+  background: var(--btn-bg);
+}
+
+/* 预览面板内容 */
+.preview-content {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  background: var(--bg);
+}
+
+/* 预览代码块 */
+.preview-code {
+  margin: 0;
+  padding: 20px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  overflow: auto;
+  font-size: 0.9em;
+}
+
+.preview-code code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+/* HTML预览区域 */
+.html-preview {
+  margin: 0;
+  padding: 20px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-border);
+  overflow: auto;
+  font-size: 0.9em;
+  color: var(--text);
+}
+
+/* HTML预览区域的基本样式重置 */
+.html-preview * {
+  box-sizing: border-box;
+}
+
+.html-preview body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+}
+
+.html-preview h1, .html-preview h2, .html-preview h3, .html-preview h4, .html-preview h5, .html-preview h6 {
+  margin: 1em 0 0.5em;
+  color: var(--text);
+}
+
+.html-preview p {
+  margin: 0.5em 0;
+}
+
+.html-preview a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.html-preview img {
+  max-width: 100%;
+  height: auto;
+}
+
+.html-preview code {
+  background: var(--hover);
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+}
+
+.html-preview pre {
+  background: var(--subtle);
+  padding: 12px;
+  border-radius: 6px;
+  overflow: auto;
+}
+
+.html-preview pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.html-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.html-preview th, .html-preview td {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.html-preview th {
+  background: var(--hover);
+  font-weight: 600;
+}
+
+.html-preview ul, .html-preview ol {
+  padding-left: 24px;
+  margin: 1em 0;
+}
+
+.html-preview li {
+  margin: 0.25em 0;
+}
+
+.html-preview blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 12px;
+  margin: 1em 0;
+  color: var(--muted);
+}
+
+.html-preview hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1em 0;
+}
 
 /* 表格线条样式 */
 .markdown table { width: 100%; border-collapse: collapse; margin: 8px 0; }
