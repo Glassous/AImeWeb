@@ -1,5 +1,5 @@
 import { exportConfig, replaceConfig } from './modelConfig'
-import { exportHistories, replaceHistories } from './chat'
+import { exportHistories, replaceHistories, mergeHistories } from './chat'
 import { supabase } from '../api/supabase'
 import { ref } from 'vue'
 import { authState } from './auth'
@@ -105,10 +105,9 @@ export function importGlobal(obj: any): { ok: boolean; error?: string; applied: 
         const res = replaceHistories(obj.conversations)
         if (!res.ok) return { ok: false, error: res.error || '聊天历史导入失败', applied }
       } else {
-        // 本地有历史记录，需要合并
-        // 这里可以根据需要实现更复杂的合并逻辑
-        // 目前先简单处理，不覆盖本地数据
-        // 后续可以根据时间戳、会话标题等进行智能合并
+        // 本地有历史记录，进行合并
+        const res = mergeHistories(obj.conversations)
+        if (!res.ok) return { ok: false, error: res.error || '聊天历史合并失败', applied }
       }
       applied.push('chatHistories')
     }

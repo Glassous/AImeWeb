@@ -16,6 +16,8 @@ export interface ChatRecord {
   messages: ChatMessage[]
   title: string
   updatedAt: number
+  isDeleted?: boolean
+  deletedAt?: number | null
 }
 
 const STORAGE_KEY = 'aime.chat.history'
@@ -74,7 +76,7 @@ function generateId(): number {
 }
 
 export function getHistories() {
-  return state.histories
+  return state.histories.filter(h => !h.isDeleted)
 }
 
 export function getActiveId() {
@@ -154,9 +156,17 @@ export function deleteChat(id: number) {
   const idx = state.histories.findIndex(h => h.id === id)
   if (idx === -1) return
   const removedActive = state.activeId === id
-  state.histories.splice(idx, 1)
+  
+  // 软删除
+  const record = state.histories[idx]
+  if (!record) return
+  record.isDeleted = true
+  record.deletedAt = Date.now()
+  record.updatedAt = Date.now() // 更新时间戳以便同步
+
   if (removedActive) {
-    const first = state.histories[0]
+    // 查找第一个未删除的记录
+    const first = state.histories.find(h => !h.isDeleted)
     state.activeId = first ? first.id : null
   }
   persist()
@@ -207,7 +217,6 @@ export const chatStore = {
 }
 
 // ===== 新增：导入/导出历史记录（用于全局同步） =====
-function clone<T>(x: T): T { return JSON.parse(JSON.stringify(x)) as T }
 
 function normalizeMessage(m: any): ChatMessage {
   return {
@@ -225,17 +234,35 @@ function normalizeRecord(r: any): ChatRecord {
   let id: number = typeof r?.id === 'number' && Number.isFinite(r.id) ? r.id : generateId()
   // 避免重复 id
   while (state.histories.some(h => h.id === id)) id = generateId()
+  
+  // 兼容 camelCase 和 snake_case
+  const createdAt = typeof r?.createdAt === 'number' && Number.isFinite(r.createdAt) ? r.createdAt : 
+                   (typeof r?.created_at === 'number' && Number.isFinite(r.created_at) ? r.created_at : now)
+  const updatedAt = typeof r?.updatedAt === 'number' && Number.isFinite(r.updatedAt) ? r.updatedAt : 
+                   (typeof r?.updated_at === 'number' && Number.isFinite(r.updated_at) ? r.updated_at : ((msgs[msgs.length - 1]?.timestamp) ?? now))
+  const isDeleted = Boolean(r?.isDeleted ?? r?.is_deleted ?? false)
+  const deletedAt = typeof r?.deletedAt === 'number' && Number.isFinite(r.deletedAt) ? r.deletedAt : 
+                   (typeof r?.deleted_at === 'number' && Number.isFinite(r.deleted_at) ? r.deleted_at : null)
+
   return {
-    createdAt: typeof r?.createdAt === 'number' && Number.isFinite(r.createdAt) ? r.createdAt : now,
+    createdAt,
     id,
     messages: msgs,
     title: typeof r?.title === 'string' && r.title.trim().length ? r.title.trim() : (msgs[0]?.content ? msgs[0].content.slice(0, 20) : '新对话'),
-    updatedAt: typeof r?.updatedAt === 'number' && Number.isFinite(r.updatedAt) ? r.updatedAt : ((msgs[msgs.length - 1]?.timestamp) ?? now),
+    updatedAt,
+    isDeleted,
+    deletedAt
   }
 }
 
-export function exportHistories(): ChatRecord[] {
-  return clone(state.histories)
+export function exportHistories(): any[] {
+  return state.histories.map(h => ({
+    ...h,
+    is_deleted: h.isDeleted,
+    deleted_at: h.deletedAt,
+    created_at: h.createdAt,
+    updated_at: h.updatedAt
+  }))
 }
 
 export function replaceHistories(input: any): { ok: boolean; error?: string } {
@@ -257,6 +284,105 @@ export function replaceHistories(input: any): { ok: boolean; error?: string } {
       state.activeId = hadDraft ? null : (first ? first.id : null)
     }
     persist()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+export function mergeHistories(input: any): { ok: boolean; error?: string } {
+  try {
+    if (!Array.isArray(input)) return { ok: false, error: '历史记录格式错误：期望为数组' }
+    
+    const inputList: ChatRecord[] = []
+    // 预处理并校验输入，尽量保留原有 ID
+    for (const item of input) {
+       const msgs: ChatMessage[] = Array.isArray(item?.messages) ? item.messages.map(normalizeMessage) : []
+       // 信任云端的 ID，只要是数字即可，不强制 regenerate
+       const id = typeof item?.id === 'number' && Number.isFinite(item.id) ? item.id : generateId()
+       const now = Date.now()
+       
+       // 兼容 camelCase 和 snake_case
+       const createdAt = typeof item?.createdAt === 'number' && Number.isFinite(item.createdAt) ? item.createdAt : 
+                        (typeof item?.created_at === 'number' && Number.isFinite(item.created_at) ? item.created_at : now)
+       const updatedAt = typeof item?.updatedAt === 'number' && Number.isFinite(item.updatedAt) ? item.updatedAt : 
+                        (typeof item?.updated_at === 'number' && Number.isFinite(item.updated_at) ? item.updated_at : ((msgs[msgs.length - 1]?.timestamp) ?? now))
+       const isDeleted = Boolean(item?.isDeleted ?? item?.is_deleted ?? false)
+       const deletedAt = typeof item?.deletedAt === 'number' && Number.isFinite(item.deletedAt) ? item.deletedAt : 
+                        (typeof item?.deleted_at === 'number' && Number.isFinite(item.deleted_at) ? item.deleted_at : null)
+
+       inputList.push({
+         createdAt,
+         id,
+         messages: msgs,
+         title: typeof item?.title === 'string' && item.title.trim().length ? item.title.trim() : (msgs[0]?.content ? msgs[0].content.slice(0, 20) : '新对话'),
+         updatedAt,
+         isDeleted,
+         deletedAt
+       })
+    }
+
+    let updatedCount = 0
+    let addedCount = 0
+
+    for (const record of inputList) {
+      // Cloud uses Title as unique key (implied by SQL logic), so we must follow suit
+      // to avoid duplicates, since we don't store Cloud UUIDs locally.
+      const idx = state.histories.findIndex(h => h.title === record.title)
+      if (idx !== -1) {
+        // 已存在
+        const local = state.histories[idx]
+        if (local) {
+            // Case 1: 云端标记为删除
+            if (record.isDeleted) {
+                if (!local.isDeleted) {
+                    // 本地未删除，则同步删除
+                    local.isDeleted = true
+                    local.deletedAt = record.deletedAt || Date.now()
+                    local.updatedAt = record.updatedAt
+                    updatedCount++
+                }
+                // 如果本地已删除，无需操作
+            } 
+            // Case 2: 云端未删除
+            else {
+                if (local.isDeleted) {
+                    // 本地已删除：检查云端是否更新（可能是在其他设备恢复）
+                    // 只有当云端更新时间明显晚于本地删除时间时才恢复
+                    // 假设 record.updatedAt > local.deletedAt
+                    if (record.updatedAt > (local.deletedAt || 0)) {
+                         // 恢复并更新
+                         record.id = local.id
+                         state.histories[idx] = record
+                         updatedCount++
+                    }
+                    // 否则，忽略云端的旧数据，保持本地删除状态（避免重新下载）
+                } else {
+                    // 本地未删除：正常合并，取较新者
+                    if (record.updatedAt > local.updatedAt || record.messages.length > local.messages.length) {
+                        // Keep local ID, update content
+                        record.id = local.id
+                        state.histories[idx] = record
+                        updatedCount++
+                    }
+                }
+            }
+        }
+      } else {
+        // 不存在：只有当云端数据未删除时才添加
+        if (!record.isDeleted) {
+            state.histories.push(record)
+            addedCount++
+        }
+      }
+    }
+
+    if (addedCount > 0 || updatedCount > 0) {
+        // 按更新时间倒序排列
+        state.histories.sort((a, b) => b.updatedAt - a.updatedAt)
+        persist()
+    }
+
     return { ok: true }
   } catch (e) {
     return { ok: false, error: (e as Error).message }
