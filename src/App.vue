@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import StarBackground from './components/StarBackground.vue'
@@ -9,22 +9,22 @@ import { themeStore } from './store/theme'
 const isSidebarOpen = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
 
-const isMenuHovering = ref(false)
 const isSidebarHovering = ref(false)
-let menuTimer: ReturnType<typeof setTimeout> | null = null
+const isEdgeHovering = ref(false)
 let sidebarTimer: ReturnType<typeof setTimeout> | null = null
+let edgeTimer: ReturnType<typeof setTimeout> | null = null
 
-const isTempOpen = computed(() => !isMobile.value && !isSidebarOpen.value && (isMenuHovering.value || isSidebarHovering.value))
+const isTempOpen = computed(() => !isMobile.value && !isSidebarOpen.value && (isEdgeHovering.value || isSidebarHovering.value))
 const realSidebarOpen = computed(() => isSidebarOpen.value || isTempOpen.value)
-const isOverlay = computed(() => isTempOpen.value)
+const isOverlay = computed(() => false) // 桌面端临时展开也改为挤压模式，不再使用悬浮覆盖
 
 function handleResize() {
   isMobile.value = window.innerWidth <= 768
   // 在进入移动端时默认关闭侧边栏以使用覆盖模式时的显隐
   if (isMobile.value) {
     isSidebarOpen.value = false
-    isMenuHovering.value = false
     isSidebarHovering.value = false
+    isEdgeHovering.value = false
   }
 }
 
@@ -34,21 +34,28 @@ function toggleSidebar() {
 
 function closeSidebar() {
   isSidebarOpen.value = false
-  isMenuHovering.value = false
   isSidebarHovering.value = false
+  isEdgeHovering.value = false
 }
 
-function handleMenuHover(v: boolean) {
+function handleEdgeHover(v: boolean) {
   if (isMobile.value) return
   if (v) {
-    if (menuTimer) clearTimeout(menuTimer)
-    isMenuHovering.value = true
+    if (edgeTimer) clearTimeout(edgeTimer)
+    isEdgeHovering.value = true
   } else {
-    menuTimer = setTimeout(() => {
-      isMenuHovering.value = false
-    }, 300)
+    edgeTimer = setTimeout(() => {
+      isEdgeHovering.value = false
+    }, 200)
   }
 }
+
+watch(isSidebarHovering, (val) => {
+  if (val) {
+    isEdgeHovering.value = false
+    if (edgeTimer) clearTimeout(edgeTimer)
+  }
+})
 
 function handleSidebarHover(v: boolean) {
   if (isMobile.value) return
@@ -76,7 +83,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
   <div
     class="layout"
     :class="[(isMobile || hideSidebar()) ? 'mobile' : '']"
-    :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': isSidebarOpen ? '280px' : '0px' } : {}"
+    :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': realSidebarOpen ? '280px' : '0px' } : {}"
   >
     <StarBackground v-if="themeStore.activeTheme.value === 'dark'" />
     <Sidebar 
@@ -96,16 +103,24 @@ const hideSidebar = () => route.meta.hideSidebar === true
           :sidebar-open="realSidebarOpen" 
           :toggle-sidebar="toggleSidebar" 
           :is-mobile="isMobile" 
-          :on-menu-hover="handleMenuHover"
         />
       </RouterView>
     </div>
     <div v-if="!hideSidebar() && isMobile && isSidebarOpen" class="overlay" @click="closeSidebar"></div>
+    <div v-if="!isMobile && !hideSidebar()" class="edge-trigger" @mouseenter="handleEdgeHover(true)" @mouseleave="handleEdgeHover(false)"></div>
   </div>
   <ToastContainer />
 </template>
 
 <style scoped>
+.edge-trigger {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 16px;
+  z-index: 40;
+}
 .layout {
   display: grid;
   grid-template-columns: var(--sidebar-w, 280px) 1fr;

@@ -191,6 +191,8 @@ function closeModal() {
 .sidebar {
   width: 100%;
   height: 100%;
+  position: relative;
+  z-index: 50;
   background: var(--bg-sidebar);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
