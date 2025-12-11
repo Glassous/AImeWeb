@@ -10,6 +10,7 @@ import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelC
 import hljs from 'highlight.js'
 
 import { renderMarkdown } from '../utils/markdown'
+import { countTokens, countContextTokens } from '../utils/token'
 import { parseMessageContent } from '../utils/thinkParser'
 import ThinkingBlock from './ThinkingBlock.vue'
 
@@ -504,6 +505,30 @@ function onMessageClick(e: MouseEvent) {
 }
 
 // 首次进入主页时显示“新对话”状态
+const isDark = computed(() => themeStore.activeTheme.value === 'dark')
+
+const messageTokenStats = computed(() => {
+  const msgs = activeChat.value?.messages
+  if (!msgs) return []
+  
+  let runningTotal = 0
+  return msgs.map(m => {
+    const t = countTokens(m.content)
+    // Context tokens before this message (Input)
+    // For the first message, input is 0. 
+    // For subsequent, it's sum of previous messages + 3 (reply prime overhead)
+    const input = runningTotal > 0 ? runningTotal + 3 : 0
+    
+    // Update running total for next iteration (each msg adds 4 + content)
+    runningTotal += (4 + t)
+    
+    return {
+      input,
+      output: t
+    }
+  })
+})
+
 onMounted(() => {
   chatStore.startDraft()
   // 绑定点击事件，用于复制代码块
@@ -581,7 +606,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
               <template v-if="m.isFromUser">
                 <div class="bubble-wrap">
                   <div class="bubble">{{ m.content }}</div>
-          <div class="inline-actions">
+                  <div class="inline-actions">
             <button class="edit-inline" aria-label="编辑并重新发送" title="编辑并重新发送" @click="openEdit(i, m.content)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <path d="M4 16l1-4 9-9 4 4-9 9-4 1z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
@@ -621,6 +646,9 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
                     </svg>
                   </button>
                   <span v-if="m.modelDisplayName" class="model-info" title="使用的模型">{{ m.modelDisplayName }}</span>
+                  <span class="token-info ai-token-info" v-if="messageTokenStats[i]" title="Input tokens / Output tokens">
+                    {{ messageTokenStats[i].input }} input, {{ messageTokenStats[i].output }} output
+                  </span>
                 </div>
               </template>
             </div>
@@ -884,8 +912,16 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .inline-actions { margin-top: 6px; display: flex; gap: 6px; opacity: 0; transition: all 0.2s; transform: translateY(-5px); }
 .bubble-wrap:hover .inline-actions { opacity: 1; transform: translateY(0); }
 
-.actions { display: flex; gap: 8px; margin-top: 8px; opacity: 0; transition: all 0.2s; padding-left: 12px; }
-.msg.ai:hover .actions { opacity: 1; }
+.actions { 
+  display: flex; 
+  align-items: center; /* Ensure vertical alignment */
+  gap: 8px; 
+  margin-top: 8px; 
+  opacity: 1; /* Always visible */
+  transition: all 0.2s; 
+  padding-left: 12px; 
+}
+/* Removed .msg.ai:hover .actions { opacity: 1; } since it is always visible now */
 
 .edit-inline, .copy-inline, .copy-ai, .resend-ai {
   border: none; background: transparent; 
@@ -899,10 +935,14 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 
 .model-info {
-  margin-top: 8px; margin-left: 12px;
+  /* Removed margins to let flex gap handle spacing */
   font-size: 11px; color: var(--muted);
   background: var(--panel); border: 1px solid var(--border);
-  padding: 2px 8px; border-radius: var(--radius-sm);
+  padding: 0 8px; /* Adjusted padding for height consistency */
+  border-radius: var(--radius-sm);
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* 输入框 - 悬浮胶囊样式 */
@@ -1192,4 +1232,85 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .markdown .code-language { font-size: 12px; font-weight: 700; color: var(--muted); }
 
 /* 暗黑模式微调 - 已移除，使用全局变量控制 */
+
+.token-info {
+  font-size: 11px;
+  color: var(--muted);
+  opacity: 1; /* Match model-info opacity */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  user-select: text; /* Allow text selection */
+  /* Removed monospace to match model-info */
+}
+
+.user-token-info {
+  justify-content: flex-end;
+  margin-right: 4px;
+  opacity: 0.6; /* Slightly lighter for user tokens */
+}
+
+.ai-token-info {
+  /* Removed margin-left to rely on gap */
+  background: var(--panel);
+  padding: 0 8px; /* Consistent padding */
+  border-radius: var(--radius-sm); 
+  border: 1px solid var(--border);
+  height: 22px;
+  display: inline-flex;
+  align-items: center; /* Ensure vertical centering */
+  /* Match model-info style exactly */
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.divider {
+  opacity: 0.5;
+}
+
+@media (max-width: 768px) {
+  .topbar {
+    padding: 0 12px;
+    gap: 8px;
+    height: 56px;
+  }
+  
+  .model-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+    max-width: 120px;
+  }
+  
+  .menu-btn, .new-chat-btn, .theme-btn, .sync-btn {
+    width: 32px; height: 32px;
+  }
+  
+  .spacer {
+    display: none; /* remove spacer to let justify-content work if needed, or keep it */
+    /* actually flex layout handles it. keep spacer but maybe reduce gap */
+  }
+  
+  .messages {
+    padding: 0 16px;
+  }
+  
+  .bubble-wrap {
+    max-width: 95%;
+  }
+  
+  .inputbar {
+    width: calc(100% - 24px);
+    bottom: 16px;
+    padding: 8px 12px;
+  }
+  
+  .inputbar.centered {
+    width: calc(100% - 32px);
+  }
+  
+  .send-btn {
+    width: 36px; height: 36px;
+  }
+}
 </style>
