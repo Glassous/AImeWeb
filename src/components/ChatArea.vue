@@ -772,7 +772,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   height: 100%;
   overflow: hidden;
   position: relative;
-  background: var(--bg);
+  background: transparent;
 }
 
 /* 主聊天区域 */
@@ -784,7 +784,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   flex-shrink: 0;
   position: relative;
-  background: var(--bg);
+  background: transparent;
 }
 
 /* 顶部栏 - 悬浮玻璃态 */
@@ -794,10 +794,10 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   height: 64px; 
   padding: 0 24px; 
   color: var(--text);
-  background: var(--backdrop-bg);
+  background: var(--bg-header);
   backdrop-filter: var(--blur-md);
   -webkit-backdrop-filter: var(--blur-md);
-  border-bottom: 1px solid rgba(0,0,0,0.05);
+  border-bottom: 1px solid var(--border);
 }
 
 .model-btn { 
@@ -862,8 +862,8 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding: 12px 18px;
   border-radius: var(--radius-xl);
   border-bottom-right-radius: 4px;
-  background: var(--primary);
-  color: #fff;
+  background: var(--bubble-user-bg);
+  color: var(--bubble-user-text);
   box-shadow: var(--shadow-md);
   text-align: left;
   white-space: pre-wrap;
@@ -926,7 +926,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   transform: translate(-50%, 50%);
   width: min(640px, calc(100% - 48px));
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  border-color: rgba(0,0,0,0.05);
+  border-color: var(--border);
 }
 
 .empty-container {
@@ -1191,8 +1191,5 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .markdown .code-block-header { background: var(--panel); padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
 .markdown .code-language { font-size: 12px; font-weight: 700; color: var(--muted); }
 
-/* 暗黑模式微调 */
-@media (prefers-color-scheme: dark) {
-  .topbar { background: rgba(20, 20, 20, 0.8); }
-}
+/* 暗黑模式微调 - 已移除，使用全局变量控制 */
 </style>

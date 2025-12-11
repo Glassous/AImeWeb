@@ -22,105 +22,130 @@
   --blur-md: blur(8px);
   --blur-lg: blur(16px);
   --backdrop-bg: rgba(255, 255, 255, 0.8); /* 玻璃拟态背景 */
+  --bg-header: rgba(255, 255, 255, 0.75); /* 顶部栏背景 */
+  
+  /* 通用块级元素背景 (如思考块) */
+  --bg-block: rgba(0, 0, 0, 0.03);
+  --bg-block-hover: rgba(0, 0, 0, 0.05);
+  --border-block: rgba(0, 0, 0, 0.05);
 
   /* 浅色模式配色 */
-  --bg: #ffffff;
-  --bg-sidebar: #f9fafb; /* 极淡的灰，区分主内容 */
-  --bg-card: #ffffff;
-  --bg-input: #f3f4f6;
+  --bg: #f1f5f9; /* 加深背景色 (Slate 100) */
+  --bg-image: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%); /* 更有质感的渐变 */
+  --bg-sidebar: rgba(255, 255, 255, 0.6); /* 半透明侧边栏 */
+  --bg-card: rgba(255, 255, 255, 0.8);
+  --bg-input: #ffffff; /* 输入框更亮，形成对比 */
   
-  --text: #111827;       /* 接近纯黑 */
-  --text-secondary: #4b5563;
-  --text-tertiary: #9ca3af;
+  --text: #0f172a;       /* 更深的黑 (Slate 900) */
+  --text-secondary: #334155; /* (Slate 700) */
+  --text-tertiary: #64748b;
   
-  --border: #e5e7eb;
-  --border-hover: #d1d5db;
+  --border: #cbd5e1; /* 加深边框 (Slate 300) */
+  --border-hover: #94a3b8;
   
-  --hover: #f3f4f6;
-  --active: #e5e7eb;
+  --hover: #e2e8f0;
+  --active: #cbd5e1;
 
   --btn-bg: #ffffff;
-  --btn-border: #e5e7eb;
-  --btn-text: #374151;
+  --btn-border: #cbd5e1;
+  --btn-text: #1e293b;
   
-  --bubble-user-bg: #f3f4f6; /* 浅灰色气泡 */
-  --bubble-user-text: #111827;
+  /* 气泡颜色升级 */
+  --bubble-user-bg: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); /* 靛蓝到蓝色的渐变 */
+  --bubble-user-text: #ffffff;
   --bubble-ai-bg: transparent;
-  --bubble-ai-text: #111827;
+  --bubble-ai-text: #0f172a;
 
   --error-bg: #fef2f2;
-  --error-text: #ef4444;
-  --error-border: #fee2e2;
+  --error-text: #dc2626;
+  --error-border: #fecaca;
 
-  --mask: rgba(0, 0, 0, 0.2);
+  --mask: rgba(0, 0, 0, 0.3);
   
   /* 强调色 */
-  --primary: #2563eb;    /* 鲜艳的蓝 */
-  --primary-hover: #1d4ed8;
-  --primary-light: #eff6ff;
+  --primary: #4f46e5;    /* 使用更高级的 Indigo */
+  --primary-hover: #4338ca;
+  --primary-light: #e0e7ff;
   --on-primary: #ffffff;
 
   /* 代码高亮相关 */
-  --code-bg: #f9fafb;
-  --code-border: #e5e7eb;
-  --code-text: #24292f;
+  --code-bg: #f1f5f9; /* 稍微加深 */
+  --code-border: #cbd5e1;
+  --code-text: #1e293b;
   
-  --panel: rgba(255, 255, 255, 0.8);
-  --panel-border: rgba(255, 255, 255, 0.6);
+  --panel: rgba(255, 255, 255, 0.9);
+  --panel-border: rgba(255, 255, 255, 0.8);
   
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
 :root[data-theme='dark'] {
-  /* 深色模式配色 */
-  --bg: #09090b;         /* 极深灰，非纯黑，更有质感 */
-  --bg-sidebar: #000000; /* 侧边栏纯黑，增加层次 */
-  --bg-card: #18181b;
-  --bg-input: #27272a;
+  /* 深色模式配色 - 星空夜 */
+  --bg: #020617;         /* 更深的夜空蓝 (Slate 950) */
+  
+  /* 星空背景 - 更加深邃 */
+  --bg-image: 
+      radial-gradient(circle 1.5px at 50px 100px, rgba(255,255,255,0.5), transparent 2px),
+      radial-gradient(circle 1px at 150px 300px, rgba(255,255,255,0.4), transparent 1.5px),
+      radial-gradient(circle 2px at 400px 400px, rgba(255,255,255,0.3), transparent 2.5px),
+      radial-gradient(circle 1.5px at 300px 50px, rgba(255,255,255,0.6), transparent 2px),
+      radial-gradient(circle 1px at 200px 200px, rgba(255,255,255,0.4), transparent 1.5px),
+      linear-gradient(to bottom, #020617 0%, #000000 100%);
+  --bg-size: 550px 550px, 550px 550px, 550px 550px, 550px 550px, 550px 550px, 100% 100%;
 
-  --text: #ededef;
-  --text-secondary: #a1a1aa;
-  --text-tertiary: #71717a;
+  --bg-sidebar: rgba(2, 6, 23, 0.7); /* 更深的侧边栏 */
+  --bg-card: rgba(15, 23, 42, 0.7);
+  --bg-input: #0f172a;
 
-  --border: #27272a;
-  --border-hover: #3f3f46;
+  --text: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-tertiary: #64748b;
 
-  --hover: #27272a;
-  --active: #3f3f46;
+  --border: #1e293b;
+  --border-hover: #334155;
 
-  --btn-bg: #18181b;
-  --btn-border: #27272a;
-  --btn-text: #e4e4e7;
+  --hover: #1e293b;
+  --active: #334155;
 
-  --bubble-user-bg: #27272a;
+  --btn-bg: rgba(15, 23, 42, 0.8);
+  --btn-border: #1e293b;
+  --btn-text: #f8fafc;
+
+  /* 深色模式气泡升级 */
+  --bubble-user-bg: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%); /* 稍亮的渐变以在深色背景突出 */
   --bubble-user-text: #ffffff;
   --bubble-ai-bg: transparent;
-  --bubble-ai-text: #e4e4e7;
+  --bubble-ai-text: #f8fafc;
 
   --error-bg: #450a0a;
   --error-text: #f87171;
   --error-border: #7f1d1d;
 
-  --mask: rgba(0, 0, 0, 0.6);
-  --backdrop-bg: rgba(9, 9, 11, 0.75);
+  --mask: rgba(0, 0, 0, 0.7);
+  --backdrop-bg: rgba(2, 6, 23, 0.8);
+  --bg-header: rgba(2, 6, 23, 0.75); /* 深色模式顶部栏背景 */
+  
+  --bg-block: rgba(255, 255, 255, 0.05);
+  --bg-block-hover: rgba(255, 255, 255, 0.08);
+  --border-block: rgba(255, 255, 255, 0.08);
 
-  --primary: #3b82f6;
-  --primary-hover: #60a5fa;
-  --primary-light: rgba(59, 130, 246, 0.15);
+  --primary: #818cf8; /* Indigo 400 */
+  --primary-hover: #6366f1;
+  --primary-light: rgba(99, 102, 241, 0.15);
   --on-primary: #ffffff;
 
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-  --shadow-float: 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.6);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.7);
+  --shadow-float: 0 24px 48px -12px rgba(0, 0, 0, 0.8);
 
-  --code-bg: #111113;
-  --code-border: #27272a;
-  --code-text: #e6edf3;
+  --code-bg: #000000;
+  --code-border: #1e293b;
+  --code-text: #e2e8f0;
   
-  --panel: rgba(24, 24, 27, 0.8);
-  --panel-border: rgba(39, 39, 42, 0.6);
+  --panel: rgba(2, 6, 23, 0.85);
+  --panel-border: rgba(30, 41, 59, 0.6);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -129,7 +154,10 @@ html, body, #app { height: 100%; }
 body { 
   margin: 0; 
   color: var(--text); 
-  background: var(--bg); 
+  background-color: var(--bg); 
+  background-image: var(--bg-image);
+  background-size: var(--bg-size, cover);
+  background-attachment: fixed; /* Keep stars fixed when scrolling */
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased; /* 字体抗锯齿 */
   -moz-osx-font-smoothing: grayscale;

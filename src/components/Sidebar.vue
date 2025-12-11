@@ -192,6 +192,8 @@ function closeModal() {
   width: 100%;
   height: 100%;
   background: var(--bg-sidebar);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;

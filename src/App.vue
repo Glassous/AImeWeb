@@ -56,7 +56,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
   grid-template-columns: var(--sidebar-w, 280px) 1fr;
   transition: grid-template-columns 0.4s cubic-bezier(0.2, 0, 0, 1), background-color 0.3s ease;
   height: 100vh;
-  background: var(--bg);
+  background: transparent; /* Changed from var(--bg) to show body background */
   color: var(--text);
   overflow: hidden; /* 防止整体滚动 */
 }
@@ -68,7 +68,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
   display: flex;
   flex-direction: column;
   position: relative;
-  background: var(--bg-secondary); /* 稍微区分侧边栏和主区域 */
+  background: transparent; /* Removed undefined var(--bg-secondary) */
   transition: background-color 0.3s ease;
 }
 .layout.mobile {

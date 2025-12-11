@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { renderMarkdown } from '../utils/markdown'
 
 const props = defineProps<{
@@ -10,8 +10,6 @@ const props = defineProps<{
 
 const isExpanded = ref(props.isThinking)
 const userInteracted = ref(false)
-const contentRef = ref<HTMLDivElement | null>(null)
-const contentHeight = ref('0px')
 
 // 监听思考状态变化
 watch(() => props.isThinking, (newVal) => {
@@ -73,8 +71,8 @@ const headerText = computed(() => {
 .thinking-block {
   margin-bottom: 12px;
   border-radius: 8px;
-  background: rgba(0, 0, 0, 0.03);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--bg-block);
+  border: 1px solid var(--border-block);
   overflow: hidden;
 }
 
@@ -91,7 +89,7 @@ const headerText = computed(() => {
 }
 
 .think-header:hover {
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--bg-block-hover);
 }
 
 .think-header.is-thinking {
@@ -138,7 +136,7 @@ const headerText = computed(() => {
 
 .think-body-wrapper.expanded {
   grid-template-rows: 1fr;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-top: 1px solid var(--border-block);
 }
 
 .think-body {
@@ -153,18 +151,9 @@ const headerText = computed(() => {
   opacity: 0.9;
 }
 
-/* Dark mode adjustments */
-@media (prefers-color-scheme: dark) {
-  .thinking-block {
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.05);
-  }
-  .think-header:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-  .think-body-wrapper.expanded {
-    border-top-color: rgba(255, 255, 255, 0.05);
-  }
+/* Dark mode adjustments - 已移除，使用全局变量控制 */
+.think-body-wrapper.expanded {
+  border-top-color: var(--border-block);
 }
 
 @keyframes spin {
