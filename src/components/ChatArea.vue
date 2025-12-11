@@ -4,11 +4,11 @@ import { chatStore } from '../store/chat'
 import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
-
-import { renderMarkdown } from '../utils/markdown'
 import hljs from 'highlight.js'
 
-const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void }>()
+import { renderMarkdown } from '../utils/markdown'
+
+const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void; isMobile: boolean }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
 const isOpen = computed(() => !!props.sidebarOpen)
 
@@ -21,69 +21,90 @@ const isGenerating = ref(false)
 
 // 代码块预览状态管理
 const isPreviewOpen = ref(false)
+const previewWidth = ref(66) // 预览窗口宽度百分比
+const isResizing = ref(false)
 const previewCodeId = ref<string | null>(null)
 const previewCodeContent = ref<string>('')
 const previewCodeLanguage = ref<string>('')
-const expandedCodeBlocks = ref<string[]>([])
-
-// 预览模式：code 或 preview
 const previewMode = ref<'code' | 'preview'>('code')
+
+// 监听预览模式切换，重新高亮代码
+watch(previewMode, (newMode) => {
+  if (newMode === 'code') {
+    highlightPreviewCode()
+  }
+})
+
+// 拖拽调整大小相关逻辑
+function startResize() {
+  isResizing.value = true
+  document.addEventListener('mousemove', doResize)
+  document.addEventListener('mouseup', stopResize)
+  // 防止拖拽时选中文本
+  document.body.style.userSelect = 'none'
+  document.body.style.cursor = 'col-resize'
+}
+
+function doResize(e: MouseEvent) {
+  if (!isResizing.value) return
+  const containerWidth = document.body.clientWidth
+  // 计算右侧预览区域的宽度比例
+  // e.clientX 是鼠标距离左侧的距离，所以右侧宽度 = 总宽 - 鼠标位置
+  const rightWidthPx = containerWidth - e.clientX
+  let percentage = (rightWidthPx / containerWidth) * 100
+  
+  // 限制范围 20% - 80%
+  if (percentage < 20) percentage = 20
+  if (percentage > 80) percentage = 80
+  
+  previewWidth.value = percentage
+}
+
+function stopResize() {
+  isResizing.value = false
+  document.removeEventListener('mousemove', doResize)
+  document.removeEventListener('mouseup', stopResize)
+  document.body.style.userSelect = ''
+  document.body.style.cursor = ''
+}
 
 // 检测代码是否包含 HTML 标签
 function isHtmlCode(code: string, language: string): boolean {
   if (language.toLowerCase() === 'html') {
     return true
   }
-  // 检测是否包含 HTML 标签或 DOCTYPE
   const htmlRegex = /<(!DOCTYPE|html|head|body|div|span|p|h[1-6]|script|style|link|meta|title|a|img|table|tr|td|th|ul|ol|li|input|button|form|select|option|textarea|label|br|hr|b|i|u|strong|em|code|pre|blockquote|header|footer|nav|section|article|aside|main|figure|figcaption|video|audio|canvas|svg|iframe|embed|object|param|source|track|map|area|base|col|colgroup|dd|dl|dt|fieldset|legend|optgroup|output|progress|ruby|rt|rp|samp|small|sub|sup|template|time|var|wbr)\b/i
   return htmlRegex.test(code)
 }
 
-// 处理代码块折叠/展开
-function toggleCodeBlock(codeId: string) {
-  if (isPreviewOpen.value) {
-    // 预览时只允许折叠，不允许展开
-    if (expandedCodeBlocks.value.includes(codeId)) {
-      expandedCodeBlocks.value = expandedCodeBlocks.value.filter(id => id !== codeId)
-    }
-  } else {
-    // 正常模式下可以展开/折叠
-    if (expandedCodeBlocks.value.includes(codeId)) {
-      expandedCodeBlocks.value = expandedCodeBlocks.value.filter(id => id !== codeId)
-    } else {
-      expandedCodeBlocks.value.push(codeId)
-    }
-  }
-}
-
-// 高亮预览区域的代码
-function highlightPreviewCode() {
-  if (!isPreviewOpen.value || previewMode.value !== 'code') return
-  
-  nextTick(() => {
-    const previewCodeEl = document.querySelector('.code-preview .preview-code code') as HTMLElement | null
-    if (previewCodeEl) {
-      hljs.highlightElement(previewCodeEl)
-    }
-  })
-}
-
 // 打开代码预览
-function openCodePreview(codeId: string, content: string, language: string) {
-  previewCodeId.value = codeId
+function openCodePreview(content: string, language: string) {
   previewCodeContent.value = content
   previewCodeLanguage.value = language
-  previewMode.value = 'code' // 默认使用代码模式
+  previewMode.value = isHtmlCode(content, language) ? 'preview' : 'code'
   isPreviewOpen.value = true
   
   // 高亮预览区域的代码
-  highlightPreviewCode()
+  if (previewMode.value === 'code') {
+    highlightPreviewCode()
+  }
 }
 
 // 关闭代码预览
 function closeCodePreview() {
   isPreviewOpen.value = false
   previewCodeId.value = null
+}
+
+// 高亮预览区域的代码
+function highlightPreviewCode() {
+  if (!isPreviewOpen.value || previewMode.value !== 'code') return
+  nextTick(() => {
+    const previewCodeEl = document.querySelector('.code-preview .preview-code code') as HTMLElement | null
+    if (previewCodeEl) {
+      hljs.highlightElement(previewCodeEl)
+    }
+  })
 }
 
 // 复制提示（Toast）
@@ -408,47 +429,33 @@ function onMessageClick(e: MouseEvent) {
     return
   }
   
+  // 处理预览按钮点击
+  const previewBtn = target.closest('.code-preview-btn') as HTMLElement | null
+  if (previewBtn) {
+    const wrapper = previewBtn.closest('.code-block') as HTMLElement | null
+    if (!wrapper) return
+    
+    const codeEl = wrapper.querySelector('pre > code')
+    const codeText = codeEl?.textContent || ''
+    const language = wrapper.querySelector('.code-language')?.textContent || ''
+    
+    openCodePreview(codeText, language)
+    return
+  }
+ 
+  // 处理源码按钮点击（如果有的话，通常源码就是直接看）
+  // ...
+
   // 处理折叠/展开按钮点击
   const toggleBtn = target.closest('.code-toggle-btn') as HTMLElement | null
   if (toggleBtn) {
     const wrapper = toggleBtn.closest('.code-block') as HTMLElement | null
-    const codeBlockId = wrapper?.getAttribute('data-code-block-id')
-    if (codeBlockId) {
-      toggleCodeBlock(codeBlockId)
+    if (wrapper) {
+      wrapper.classList.toggle('collapsed')
+      // 更新按钮图标或提示（如果需要动态改变SVG，可以在这里做，或者CSS控制）
     }
     return
   }
-  
-  // 处理查看按钮点击
-  const viewBtn = target.closest('.code-view-btn') as HTMLElement | null
-  if (viewBtn) {
-    const wrapper = viewBtn.closest('.code-block') as HTMLElement | null
-    const codeBlockId = viewBtn.getAttribute('data-code-block-id')
-    const language = viewBtn.getAttribute('data-code-language') || ''
-    const codeEl = wrapper?.querySelector('pre > code') as HTMLElement | null
-    const codeText = codeEl?.textContent || ''
-    if (codeBlockId && codeText) {
-      openCodePreview(codeBlockId, codeText, language)
-    }
-    return
-  }
-}
-
-// 更新代码块展开状态
-function updateCodeBlockExpansion() {
-  if (!messagesEl.value) return
-  
-  // 移除所有展开状态
-  const allCodeBlocks = messagesEl.value.querySelectorAll('.code-block')
-  allCodeBlocks.forEach(block => {
-    block.classList.remove('expanded')
-  })
-  
-  // 添加当前展开状态
-  expandedCodeBlocks.value.forEach(codeId => {
-    const codeBlock = messagesEl.value?.querySelector(`[data-code-block-id="${codeId}"]`)
-    codeBlock?.classList.add('expanded')
-  })
 }
 
 // 首次进入主页时显示“新对话”状态
@@ -456,30 +463,6 @@ onMounted(() => {
   chatStore.startDraft()
   // 绑定点击事件，用于复制代码块
   try { messagesEl.value?.addEventListener('click', onMessageClick) } catch (_) {}
-  
-  // 初始调用一次，确保代码块默认折叠
-  nextTick(() => {
-    updateCodeBlockExpansion()
-  })
-  
-  // 监听消息变化，更新代码块展开状态
-  watch(() => activeChat.value?.messages, () => {
-    nextTick(() => {
-      updateCodeBlockExpansion()
-    })
-  }, { deep: true })
-  
-  // 监听展开状态变化，更新代码块
-  watch(expandedCodeBlocks, () => {
-    updateCodeBlockExpansion()
-  })
-  
-  // 监听预览模式变化，当切换到代码模式时重新高亮
-  watch(previewMode, (newMode) => {
-    if (newMode === 'code') {
-      highlightPreviewCode()
-    }
-  })
 })
 
 onUnmounted(() => {
@@ -494,9 +477,9 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 <template>
   <div class="chat-container">
     <!-- 主聊天区域 -->
-    <section class="chat-main" :class="{ 'preview-open': isPreviewOpen }">
+    <section class="chat-main" :class="{ 'preview-open': isPreviewOpen }" :style="isPreviewOpen ? { width: `calc(100% - ${previewWidth}%)` } : {}">
       <header class="topbar">
-        <button class="menu-btn" aria-label="菜单" title="菜单" @click="props.toggleSidebar">
+        <button class="menu-btn" @click="toggleSidebar">
           <svg v-if="!isOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
@@ -649,8 +632,15 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
       </div>
     </section>
     
+    <!-- 拖拽调整宽度的把手 -->
+    <div 
+      v-if="isPreviewOpen" 
+      class="resize-handle" 
+      @mousedown="startResize"
+    ></div>
+
     <!-- 代码预览面板 -->
-    <div v-if="isPreviewOpen" class="code-preview">
+    <div v-if="isPreviewOpen" class="code-preview" :style="{ width: `${previewWidth}%` }">
       <div class="preview-header">
         <h3>代码预览</h3>
         <div class="preview-language">{{ previewCodeLanguage }}</div>
@@ -683,8 +673,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         <!-- 代码模式 -->
         <pre v-if="previewMode === 'code'" class="preview-code"><code :class="`language-${previewCodeLanguage} hljs`">{{ previewCodeContent }}</code></pre>
         
-        <!-- 预览模式 -->
-        <div v-else class="html-preview" v-html="previewCodeContent"></div>
+        <!-- 预览模式 (使用 iframe 隔离) -->
+        <iframe 
+          v-else 
+          class="preview-iframe" 
+          sandbox="allow-scripts" 
+          :srcdoc="previewCodeContent"
+        ></iframe>
       </div>
     </div>
   </div>
@@ -704,13 +699,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   flex-direction: column;
   height: 100%;
   width: 100%;
-  transition: width 0.3s ease;
+  transition: width 0.1s ease; /* 拖拽时响应更快一点 */
   flex-shrink: 0;
 }
 
-/* 预览打开时，主聊天区域宽度调整为50% */
+/* 预览打开时，主聊天区域宽度由 inline style 控制 */
 .chat-main.preview-open {
-  width: calc(100% - 50%);
+  /* width: calc(100% - 50%);  <-- Removed */
 }
 
 .topbar {
@@ -909,9 +904,26 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   transform: rotate(180deg);
 }
 
+/* 拖拽把手 */
+.resize-handle {
+  width: 4px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 100;
+  transition: background 0.2s;
+  flex-shrink: 0;
+  margin-left: -2px; /* 让把手覆盖在边框上一点 */
+  margin-right: -2px;
+}
+
+.resize-handle:hover, .resize-handle:active {
+  background: var(--primary);
+}
+
 /* 代码预览面板 */
 .code-preview {
-  width: 50%;
+  /* width: 50%; 由 inline style 控制 */
   height: 100%;
   background: var(--bg);
   border-left: 1px solid var(--border);
@@ -921,7 +933,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   flex-direction: column;
   overflow: hidden;
   flex-shrink: 0;
-  animation: slideInRight 0.3s ease-in-out;
+  /* animation: slideInRight 0.3s ease-in-out; 拖拽时动画可能会造成抖动，暂时保留或移除 */
 }
 
 @keyframes slideInRight {
@@ -1037,54 +1049,14 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
-/* HTML预览区域 */
-.html-preview {
-  margin: 0;
-  padding: 20px;
+/* iframe 预览 */
+.preview-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: #fff; /* iframe 内部默认白色背景，避免透明导致深色模式下看不清 */
   border-radius: 8px;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
-  overflow: auto;
-  font-size: 0.9em;
-  color: var(--text);
-}
-
-/* HTML预览区域的基本样式重置 */
-.html-preview * {
-  box-sizing: border-box;
-}
-
-.html-preview body {
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  color: var(--text);
-}
-
-.html-preview h1, .html-preview h2, .html-preview h3, .html-preview h4, .html-preview h5, .html-preview h6 {
-  margin: 1em 0 0.5em;
-  color: var(--text);
-}
-
-.html-preview p {
-  margin: 0.5em 0;
-}
-
-.html-preview a {
-  color: var(--primary);
-  text-decoration: underline;
-}
-
-.html-preview img {
-  max-width: 100%;
-  height: auto;
-}
-
-.html-preview code {
-  background: var(--hover);
-  padding: 2px 4px;
-  border-radius: 4px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  display: block;
 }
 
 .html-preview pre {

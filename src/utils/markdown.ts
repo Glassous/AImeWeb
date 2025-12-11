@@ -52,7 +52,7 @@ function enhanceCodeBlocks(html: string): string {
     
     // 包装为 code-block，并追加控制按钮
     const wrapper = document.createElement('div')
-    wrapper.className = 'code-block'
+    wrapper.className = 'code-block collapsed'
     wrapper.setAttribute('data-code-block-id', codeBlockId)
     
     preEl.parentNode?.insertBefore(wrapper, preEl)
@@ -61,41 +61,54 @@ function enhanceCodeBlocks(html: string): string {
     const header = document.createElement('div')
     header.className = 'code-block-header'
     
-    // 语言显示
+    // 左侧：语言显示
+    const leftGroup = document.createElement('div')
+    leftGroup.className = 'header-left'
+    
+    // 语言图标或文字
     const langSpan = document.createElement('span')
     langSpan.className = 'code-language'
-    langSpan.textContent = language || 'plaintext'
-    header.appendChild(langSpan)
+    langSpan.textContent = (language || 'TEXT').toUpperCase()
+    leftGroup.appendChild(langSpan)
     
+    header.appendChild(leftGroup)
+    
+    // 右侧：操作按钮组
+    const rightGroup = document.createElement('div')
+    rightGroup.className = 'header-right'
+
+    // 预览按钮（仅对部分语言显示）
+    const isPreviewable = ['html', 'svg', 'xml'].includes((language || '').toLowerCase())
+    if (isPreviewable) {
+      const previewBtn = document.createElement('button')
+      previewBtn.className = 'code-btn code-preview-btn'
+      previewBtn.setAttribute('title', '在侧边栏预览')
+      previewBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg> 预览'
+      rightGroup.appendChild(previewBtn)
+    }
+
     // 折叠/展开按钮
     const toggleBtn = document.createElement('button')
-    toggleBtn.className = 'code-toggle-btn'
+    toggleBtn.className = 'code-btn code-toggle-btn'
     toggleBtn.setAttribute('title', '折叠/展开')
-    toggleBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>'
-    header.appendChild(toggleBtn)
-    
-    // 查看按钮
-    const viewBtn = document.createElement('button')
-    viewBtn.className = 'code-view-btn'
-    viewBtn.setAttribute('title', '查看代码')
-    viewBtn.setAttribute('data-code-block-id', codeBlockId)
-    viewBtn.setAttribute('data-code-language', language || 'plaintext')
-    viewBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>'
-    header.appendChild(viewBtn)
-    
+    toggleBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>'
+    rightGroup.appendChild(toggleBtn)
+
     // 复制按钮
     const copyBtn = document.createElement('button')
-    copyBtn.className = 'code-copy-btn'
+    copyBtn.className = 'code-btn code-copy-btn'
     copyBtn.setAttribute('title', '复制')
-    copyBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
-    header.appendChild(copyBtn)
-    
+    copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>'
+    rightGroup.appendChild(copyBtn)
+
+    header.appendChild(rightGroup)
     wrapper.appendChild(header)
     
-    // 创建代码内容区域（用于折叠/展开）
+    // 创建代码内容区域
     const contentWrapper = document.createElement('div')
-    contentWrapper.className = 'code-content'
+    contentWrapper.className = 'code-body'
     contentWrapper.appendChild(preEl)
+    
     wrapper.appendChild(contentWrapper)
   })
   return container.innerHTML
