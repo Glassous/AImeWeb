@@ -532,6 +532,11 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </button>
+        <button v-if="activeChat && activeChat.messages.length > 0" class="new-chat-btn" title="开启新对话" @click="chatStore.startDraft()">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 4v16M4 12h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
         <button class="model-btn" :title="selectedLabel" @click.stop="openModelSelector">
           {{ selectedLabel }}
         </button>
@@ -817,9 +822,18 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   color: var(--muted); 
   transition: all 0.2s;
 }
-.menu-btn:hover, .theme-btn:hover, .sync-btn:not(.spinning):hover { background: var(--hover); color: var(--text); transform: rotate(15deg); }
+.menu-btn:hover, .theme-btn:hover, .sync-btn:not(.spinning):hover, .new-chat-btn:hover { background: var(--hover); color: var(--text); transform: rotate(15deg); }
 .sync-btn.spinning { cursor: not-allowed; opacity: 0.8; }
 .sync-btn.spinning svg { animation: spin 1s linear infinite; }
+
+.new-chat-btn {
+  border: none; background: transparent; cursor: pointer; padding: 0;
+  border-radius: var(--radius-full);
+  width: 40px; height: 40px;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--muted);
+  transition: all 0.2s;
+}
 
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
@@ -832,7 +846,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding-bottom: 120px; /* Inputbar height + spacing */
   scroll-behavior: smooth;
 }
-.messages { padding: 0 24px; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+.messages { padding: 0 24px; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
 
 
 
@@ -855,14 +869,14 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   white-space: pre-wrap;
   word-break: break-word;
   font-size: 15px;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 .msg.ai .text { 
   max-width: 100%; 
   padding: 0 12px;
   font-size: 16px;
-  line-height: 1.75;
+  line-height: 1.85;
   color: var(--text);
 }
 

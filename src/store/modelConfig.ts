@@ -94,24 +94,39 @@ function normalizeConfig(input: any): ModelConfig | null {
     ? (input as any).models
     : (Array.isArray((input as any).items) ? (input as any).items : [])
 
-  const groups: ModelGroup[] = groupsInput.map((g: any) => ({
-    id: sanitizeString(g.id, uuid()),
-    name: sanitizeString(g.name, sanitizeString(g.groupName)),
-    baseUrl: sanitizeString(g.baseUrl, sanitizeString(g.base_url)),
-    apiKey: sanitizeString(g.apiKey, sanitizeString(g.api_key)),
-    providerUrl: sanitizeString(g.providerUrl, sanitizeString(g.provider_url)),
-    createdAt: sanitizeNumber(g.createdAt),
-  }))
+  // Deduplicate groups by ID
+  const groupMap = new Map<string, ModelGroup>()
+  for (const g of groupsInput) {
+    const id = sanitizeString(g.id, uuid())
+    const group: ModelGroup = {
+      id,
+      name: sanitizeString(g.name, sanitizeString(g.groupName)),
+      baseUrl: sanitizeString(g.baseUrl, sanitizeString(g.base_url)),
+      apiKey: sanitizeString(g.apiKey, sanitizeString(g.api_key)),
+      providerUrl: sanitizeString(g.providerUrl, sanitizeString(g.provider_url)),
+      createdAt: sanitizeNumber(g.createdAt),
+    }
+    groupMap.set(id, group)
+  }
+  const groups = Array.from(groupMap.values())
 
   const validGroupIds = new Set(groups.map(g => g.id))
-  const modelsRaw: ModelItem[] = modelsInput.map((m: any) => ({
-    id: sanitizeString(m.id, uuid()),
-    groupId: sanitizeString(m.groupId, sanitizeString(m.group_id)),
-    modelName: sanitizeString(m.modelName, sanitizeString(m.model)),
-    name: sanitizeString(m.name),
-    createdAt: sanitizeNumber(m.createdAt),
-    remark: sanitizeString(m.remark, undefined as any),
-  }))
+
+  // Deduplicate models by ID
+  const modelMap = new Map<string, ModelItem>()
+  for (const m of modelsInput) {
+    const id = sanitizeString(m.id, uuid())
+    const model: ModelItem = {
+      id,
+      groupId: sanitizeString(m.groupId, sanitizeString(m.group_id)),
+      modelName: sanitizeString(m.modelName, sanitizeString(m.model)),
+      name: sanitizeString(m.name),
+      createdAt: sanitizeNumber(m.createdAt),
+      remark: sanitizeString(m.remark, undefined as any),
+    }
+    modelMap.set(id, model)
+  }
+  const modelsRaw = Array.from(modelMap.values())
 
   const missingGroupIds = Array.from(new Set(modelsRaw.map(m => m.groupId).filter(gid => gid && !validGroupIds.has(gid))))
   for (const gid of missingGroupIds) {

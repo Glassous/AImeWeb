@@ -144,6 +144,7 @@ const headerText = computed(() => {
 .think-body {
   overflow: hidden;
   font-size: 14px;
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 
