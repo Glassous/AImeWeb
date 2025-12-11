@@ -83,15 +83,9 @@
   /* 深色模式配色 - 星空夜 */
   --bg: #020617;         /* 更深的夜空蓝 (Slate 950) */
   
-  /* 星空背景 - 更加深邃 */
-  --bg-image: 
-      radial-gradient(circle 1.5px at 50px 100px, rgba(255,255,255,0.5), transparent 2px),
-      radial-gradient(circle 1px at 150px 300px, rgba(255,255,255,0.4), transparent 1.5px),
-      radial-gradient(circle 2px at 400px 400px, rgba(255,255,255,0.3), transparent 2.5px),
-      radial-gradient(circle 1.5px at 300px 50px, rgba(255,255,255,0.6), transparent 2px),
-      radial-gradient(circle 1px at 200px 200px, rgba(255,255,255,0.4), transparent 1.5px),
-      linear-gradient(to bottom, #020617 0%, #000000 100%);
-  --bg-size: 550px 550px, 550px 550px, 550px 550px, 550px 550px, 550px 550px, 100% 100%;
+  /* 星空背景 - 使用 StarBackground 组件动态生成，此处仅保留渐变底色 */
+  --bg-image: linear-gradient(to bottom, #020617 0%, #000000 100%);
+  --bg-size: 100% 100%;
 
   --bg-sidebar: rgba(2, 6, 23, 0.7); /* 更深的侧边栏 */
   --bg-card: rgba(15, 23, 42, 0.7);

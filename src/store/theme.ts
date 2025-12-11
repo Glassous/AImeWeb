@@ -6,6 +6,7 @@ const media = typeof window !== 'undefined'
   : { matches: false, addEventListener: () => {}, removeEventListener: () => {} } as any
 
 const mode = ref<Mode>('system')
+const activeTheme = ref<'light' | 'dark'>('light')
 
 function effective(): 'light' | 'dark' {
   if (mode.value === 'system') return media.matches ? 'dark' : 'light'
@@ -14,6 +15,7 @@ function effective(): 'light' | 'dark' {
 
 function applyTheme() {
   const eff = effective()
+  activeTheme.value = eff
   const root = document.documentElement
   root.setAttribute('data-theme', eff)
   ;(root.style as any).colorScheme = eff
@@ -44,4 +46,4 @@ function init() {
   applyTheme()
 }
 
-export const themeStore = { mode, setMode, cycle, init }
+export const themeStore = { mode, activeTheme, setMode, cycle, init }

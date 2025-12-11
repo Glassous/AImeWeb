@@ -2,7 +2,9 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
+import StarBackground from './components/StarBackground.vue'
 import { RouterView, useRoute } from 'vue-router'
+import { themeStore } from './store/theme'
 
 const isSidebarOpen = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
@@ -39,6 +41,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
     :class="[(isMobile || hideSidebar()) ? 'mobile' : '']"
     :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': isSidebarOpen ? '280px' : '0px' } : {}"
   >
+    <StarBackground v-if="themeStore.activeTheme.value === 'dark'" />
     <Sidebar v-if="!hideSidebar()" :class="[isSidebarOpen ? 'open' : '']" :is-mobile="isMobile" :is-open="isSidebarOpen" @close="closeSidebar" />
     <div class="main-col">
       <RouterView v-slot="{ Component }">
