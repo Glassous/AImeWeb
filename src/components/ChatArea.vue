@@ -10,7 +10,7 @@ import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelC
 import hljs from 'highlight.js'
 
 import { renderMarkdown } from '../utils/markdown'
-import { countTokens, countContextTokens } from '../utils/token'
+import { countTokens } from '../utils/token'
 import { parseMessageContent } from '../utils/thinkParser'
 import ThinkingBlock from './ThinkingBlock.vue'
 
@@ -505,7 +505,7 @@ function onMessageClick(e: MouseEvent) {
 }
 
 // 首次进入主页时显示“新对话”状态
-const isDark = computed(() => themeStore.activeTheme.value === 'dark')
+
 
 const messageTokenStats = computed(() => {
   const msgs = activeChat.value?.messages
