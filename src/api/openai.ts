@@ -286,6 +286,7 @@ export async function replyStream(conversation: ConversationMessage[], options: 
   }
 
   // 1) 尝试 Chat Completions 流式
+  let isThinking = false
   try {
     const messages = toChatCompletionMessages(conversation, sys)
     
@@ -306,9 +307,39 @@ export async function replyStream(conversation: ConversationMessage[], options: 
     }
     
     const full = await readSSE(resp, (obj) => {
-      const d = obj?.choices?.[0]?.delta?.content
-      return typeof d === 'string' ? d : null
+      const delta = obj?.choices?.[0]?.delta
+      if (!delta) return null
+
+      let res = ''
+      
+      // Handle reasoning_content (DeepSeek style)
+      const reasoning = delta.reasoning_content
+      if (typeof reasoning === 'string' && reasoning.length > 0) {
+        if (!isThinking) {
+          res += '<think>'
+          isThinking = true
+        }
+        res += reasoning
+      }
+      
+      // Handle content
+      const content = delta.content
+      if (typeof content === 'string' && content.length > 0) {
+        if (isThinking) {
+          res += '</think>'
+          isThinking = false
+        }
+        res += content
+      }
+      
+      return res.length > 0 ? res : null
     })
+
+    if (isThinking) {
+      onDelta('</think>')
+      return full + '</think>'
+    }
+
     if (full && full.trim()) return full
     // 若无内容，继续尝试 Responses
   } catch (_) {

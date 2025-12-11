@@ -2,12 +2,16 @@
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
 import { toastStore } from '../store/toast'
+import { authState } from '../store/auth'
+import { syncWithCloud, syncState } from '../store/sync'
 import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
 import hljs from 'highlight.js'
 
 import { renderMarkdown } from '../utils/markdown'
+import { parseMessageContent } from '../utils/thinkParser'
+import ThinkingBlock from './ThinkingBlock.vue'
 
 const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void; isMobile: boolean }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
@@ -183,6 +187,20 @@ function listModelsInGroup(groupId: string) {
   try { return getModelsByGroup(groupId) } catch { return [] }
 }
 const selectedId = computed(() => modelConfig.value?.selectedModelId || '')
+
+// 同步相关
+const isAuthenticated = computed(() => authState.value.isAuthenticated)
+const isSyncing = computed(() => syncState.value.status === 'syncing')
+
+async function handleSync() {
+  if (isSyncing.value) return
+  await syncWithCloud()
+  if (syncState.value.status === 'success') {
+    toastStore.success('同步成功')
+  } else if (syncState.value.status === 'failed') {
+    toastStore.error('同步失败：' + (syncState.value.error || '未知错误'))
+  }
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -518,6 +536,14 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
           {{ selectedLabel }}
         </button>
         <div class="spacer"></div>
+        <button v-if="isAuthenticated" class="sync-btn" :class="{ spinning: isSyncing }" :title="isSyncing ? '同步中...' : '立即同步'" @click="handleSync">
+          <svg v-if="!isSyncing" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19c2.485 0 4.5-2.015 4.5-4.5s-2.015-4.5-4.5-4.5c-.4 0-.77.08-1.12.23C15.6 7.4 13.5 5.5 11 5.5c-2.76 0-5 2.24-5 5 0 .2.02.4.05.6C3.58 11.55 1.5 13.55 1.5 16c0 2.485 2.015 4.5 4.5 4.5h11.5z"></path>
+          </svg>
+          <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+          </svg>
+        </button>
         <button class="theme-btn" :aria-label="'主题：' + themeMode" :title="'主题：' + themeMode" @click="themeStore.cycle()">
           <svg v-if="themeMode === 'system'" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="3" y="5" width="18" height="12" rx="2" stroke="currentColor" stroke-width="2"/>
@@ -567,7 +593,15 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
                 </div>
               </template>
               <template v-else>
-                <div class="text markdown" v-html="renderMarkdown(m.content)"></div>
+                <div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">
+                  <ThinkingBlock 
+                    v-if="parseMessageContent(m.content).reasoning"
+                    :content="parseMessageContent(m.content).reasoning"
+                    :is-thinking="parseMessageContent(m.content).isThinking"
+                    :time="parseMessageContent(m.content).thinkTime"
+                  />
+                  <div class="text markdown" v-html="renderMarkdown(parseMessageContent(m.content).content)"></div>
+                </div>
                 <div class="actions">
                   <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -775,7 +809,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .model-btn:hover { background: var(--hover); box-shadow: var(--shadow-sm); transform: translateY(-1px); }
 
-.menu-btn, .theme-btn { 
+.menu-btn, .theme-btn, .sync-btn { 
   border: none; background: transparent; cursor: pointer; padding: 0; 
   border-radius: var(--radius-full); 
   width: 40px; height: 40px; 
@@ -783,7 +817,12 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   color: var(--muted); 
   transition: all 0.2s;
 }
-.menu-btn:hover, .theme-btn:hover { background: var(--hover); color: var(--text); transform: rotate(15deg); }
+.menu-btn:hover, .theme-btn:hover, .sync-btn:not(.spinning):hover { background: var(--hover); color: var(--text); transform: rotate(15deg); }
+.sync-btn.spinning { cursor: not-allowed; opacity: 0.8; }
+.sync-btn.spinning svg { animation: spin 1s linear infinite; }
+
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
 .spacer { flex: 1; }
 
 /* 消息滚动区 */
