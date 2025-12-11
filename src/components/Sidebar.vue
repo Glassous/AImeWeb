@@ -70,7 +70,7 @@ function closeModal() {
   <aside class="sidebar" :class="[props.isOpen ? 'open' : '', props.overlay ? 'overlay' : '']">
     <div class="sidebar-top">
       <div class="brand">
-        <div class="logo-box">AI</div>
+        <!-- Logo removed -->
         <span>AIme</span>
       </div>
       <button v-if="props.isMobile" class="icon-btn close-mobile" aria-label="关闭" @click="close">

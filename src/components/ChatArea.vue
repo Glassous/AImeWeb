@@ -29,6 +29,22 @@ const isGenerating = ref(false)
 const isPreviewOpen = ref(false)
 const previewWidth = ref(66) // 预览窗口宽度百分比
 const isResizing = ref(false)
+const isMobilePreview = ref(false)
+
+// 切换手机/桌面预览模式
+function toggleMobilePreview() {
+  isMobilePreview.value = !isMobilePreview.value
+  // 自动调整预览区域宽度
+  if (isMobilePreview.value) {
+    // 手机模式下，根据当前屏幕宽度估算一个合适的百分比，或者直接固定一个稍窄的百分比
+    // 例如 45% (取决于屏幕宽度，但在大多数桌面屏上45%足够容纳手机框)
+    previewWidth.value = 45
+  } else {
+    // 恢复到默认较宽状态
+    previewWidth.value = 66
+  }
+}
+
 const previewCodeId = ref<string | null>(null)
 const previewCodeContent = ref<string>('')
 const previewCodeLanguage = ref<string>('')
@@ -246,6 +262,11 @@ function sendMessage() {
 
   // 开启流式输出；失败时回退到非流式
   isGenerating.value = true
+  
+  // 重置预览相关状态（如果是新消息）
+  // 注意：如果是 resend 或 applyEditAndResend，可能需要保留之前的状态？
+  // 暂时每次生成都重新检测
+  
   replyStream(ctx, {
     model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
     groupId: selectedModel.value?.groupId,
@@ -256,10 +277,17 @@ function sendMessage() {
     if (!target) return
     target.content += delta
     target.timestamp = Date.now()
+    
+    // 实时检测 HTML 代码块并自动开启预览（仅代码模式）
+    detectAndStreamPreview(target.content)
+    
     scrollToBottom()
   })
     .then(() => {
-      // 流式完成
+      // 流式完成，如果开启了预览且内容是HTML，自动切换到预览模式
+      if (isPreviewOpen.value && isHtmlCode(previewCodeContent.value, previewCodeLanguage.value)) {
+        previewMode.value = 'preview'
+      }
     })
     .catch(async (err) => {
       // 回退：非流式一次性请求
@@ -307,6 +335,83 @@ function copy(text: string) {
   }
 }
 
+// 检测并流式更新预览内容
+function detectAndStreamPreview(fullContent: string) {
+  // 简单的正则匹配最后一个 HTML 代码块
+  // 支持 html, xml, svg, vue
+  const codeBlockRegex = /```(html|xml|svg|vue)\s*([\s\S]*?)(?:```|$)/gi
+  let match
+  let lastMatch = null
+  
+  // 找到最后一个匹配的代码块
+  while ((match = codeBlockRegex.exec(fullContent)) !== null) {
+    lastMatch = match
+  }
+  
+  if (lastMatch) {
+    const lang = (lastMatch[1] || '').toLowerCase()
+    const content = lastMatch[2] || '' // 不trim，保留格式
+    
+    // 如果还没打开预览，或者正在预览但不是当前这个（简单判断内容长度增长）
+    if (!isPreviewOpen.value) {
+      isPreviewOpen.value = true
+      previewMode.value = 'code' // 强制代码模式
+    }
+    
+    // 强制更新为代码模式，禁用预览渲染
+    if (previewMode.value !== 'code') {
+      previewMode.value = 'code'
+    }
+    
+    previewCodeLanguage.value = lang
+    previewCodeContent.value = content
+  }
+}
+
+// 处理预览内容，确保包含 viewport meta 标签以支持响应式
+const finalPreviewContent = computed(() => {
+  let content = previewCodeContent.value
+  if (!content) return ''
+  
+  // 仅在预览模式且为 HTML 时注入 viewport
+  if (isHtmlCode(content, previewCodeLanguage.value)) {
+    // 检查是否已有 viewport
+    if (!/meta\s+name=["']viewport["']/i.test(content)) {
+      const viewportTag = '<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">'
+      if (/<head>/i.test(content)) {
+        content = content.replace(/<head>/i, `<head>${viewportTag}`)
+      } else if (/<html>/i.test(content)) {
+        content = content.replace(/<html>/i, `<html><head>${viewportTag}</head>`)
+      } else {
+        // 片段或无结构 HTML，直接拼在前面
+        content = viewportTag + content
+      }
+    }
+    
+    // 注入简单的样式重置，确保 iframe 中无默认边距干扰全屏效果
+    let resetStyle = 'body { margin: 0; padding: 0; }'
+    
+    // 如果是手机模拟模式，隐藏滚动条以获得更像原生 App 的体验
+    if (isMobilePreview.value) {
+      resetStyle += `
+        ::-webkit-scrollbar { display: none; }
+        html, body { scrollbar-width: none; -ms-overflow-style: none; }
+      `
+    }
+    
+    const styleTag = `<style>${resetStyle}</style>`
+    
+    if (!content.includes('body { margin: 0')) {
+       if (/<\/head>/i.test(content)) {
+         content = content.replace(/<\/head>/i, `${styleTag}</head>`)
+       } else {
+         content = styleTag + content
+       }
+    }
+  }
+  return content
+})
+
 // 重新发送指定 AI 回复：基于该条之前的完整上下文重试，完成后删除旧记录
 async function resend(index: number) {
   if (isGenerating.value) return
@@ -340,13 +445,22 @@ async function resend(index: number) {
       model: (selectedModel.value?.modelName || selectedModel.value?.name || ''),
       groupId: selectedModel.value?.groupId,
     }, (delta: string) => {
-      const cur = chatStore.getActiveChat(); if (!cur) return
-      const nm = cur.messages[aiIndexNew]
+      const cur2 = chatStore.getActiveChat(); if (!cur2) return
+      const nm = cur2.messages[aiIndexNew]
       if (!nm) return
       nm.content += delta
       nm.timestamp = Date.now()
+      
+      // 实时检测 HTML 代码块并自动开启预览（仅代码模式）
+      detectAndStreamPreview(nm.content)
+      
       scrollToBottom()
     })
+
+    // 流式完成，如果开启了预览且内容是HTML，自动切换到预览模式
+    if (isPreviewOpen.value && isHtmlCode(previewCodeContent.value, previewCodeLanguage.value)) {
+      previewMode.value = 'preview'
+    }
 
     isGenerating.value = false
   } catch (err) {
@@ -426,8 +540,17 @@ async function applyEditAndResend() {
       if (!nm) return
       nm.content += delta
       nm.timestamp = Date.now()
+      
+      // 实时检测 HTML 代码块并自动开启预览（仅代码模式）
+      detectAndStreamPreview(nm.content)
+      
       scrollToBottom()
     })
+
+    // 流式完成，如果开启了预览且内容是HTML，自动切换到预览模式
+    if (isPreviewOpen.value && isHtmlCode(previewCodeContent.value, previewCodeLanguage.value)) {
+      previewMode.value = 'preview'
+    }
 
     isGenerating.value = false
   } catch (err) {
@@ -497,6 +620,17 @@ function onMessageClick(e: MouseEvent) {
   if (toggleBtn) {
     const wrapper = toggleBtn.closest('.code-block') as HTMLElement | null
     if (wrapper) {
+      // 如果预览打开，且该代码块正是正在预览的内容，则禁止展开
+      if (isPreviewOpen.value) {
+        const codeEl = wrapper.querySelector('pre > code')
+        const codeText = codeEl?.textContent || ''
+        // 简单比对内容长度或前100字符，避免大文本完全比对性能损耗，或者直接比对
+        // 考虑到这里是点击事件，完全比对应该没问题
+        if (codeText === previewCodeContent.value) {
+           showToast('预览模式下该代码块保持折叠')
+           return
+        }
+      }
       wrapper.classList.toggle('collapsed')
       // 更新按钮图标或提示（如果需要动态改变SVG，可以在这里做，或者CSS控制）
     }
@@ -630,7 +764,14 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
                     :is-thinking="parseMessageContent(m.content).isThinking"
                     :time="parseMessageContent(m.content).thinkTime"
                   />
-                  <div class="text markdown" v-html="renderMarkdown(parseMessageContent(m.content).content)"></div>
+                  <div 
+                    class="text markdown" 
+                    :class="{ 
+                      'streaming-message': isGenerating && i === activeChat.messages.length - 1,
+                      'preview-source-message': isPreviewOpen && m.content.includes(previewCodeContent) && previewCodeContent.length > 0
+                    }"
+                    v-html="renderMarkdown(parseMessageContent(m.content).content)"
+                  ></div>
                 </div>
                 <div class="actions">
                   <button class="copy-ai" aria-label="复制" title="复制" @click="copy(m.content)">
@@ -743,11 +884,40 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             class="mode-btn" 
             :class="{ active: previewMode === 'preview' }" 
             @click="previewMode = 'preview'"
+            :disabled="isGenerating"
+            :title="isGenerating ? '流式输出时禁用预览' : ''"
           >
             预览
           </button>
         </div>
         
+        <!-- 手机/PC 切换按钮 (仅非响应式/桌面端显示) -->
+        <div v-if="previewMode === 'preview' && !isMobile" class="preview-mode-toggle" style="margin-left: 12px">
+           <button 
+            class="mode-btn" 
+            :class="{ active: !isMobilePreview }" 
+            @click="isMobilePreview = false; previewWidth = 66"
+            title="桌面视图"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+          </button>
+          <button 
+            class="mode-btn" 
+            :class="{ active: isMobilePreview }" 
+            @click="toggleMobilePreview"
+            title="手机视图 (iPhone 16 Pro)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
         <!-- 操作按钮组 -->
         <div class="preview-actions-group">
           <button v-if="previewMode === 'preview'" class="action-btn" @click="refreshPreview" title="刷新">
@@ -782,12 +952,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         <pre v-if="previewMode === 'code'" class="preview-code"><code :class="`language-${previewCodeLanguage} hljs`">{{ previewCodeContent }}</code></pre>
         
         <!-- 预览模式 (使用 iframe 隔离) -->
-        <iframe 
-          v-else 
-          class="preview-iframe" 
-          sandbox="allow-scripts" 
-          :srcdoc="previewCodeContent"
-        ></iframe>
+        <div v-else class="preview-container" :class="{ 'mobile-mode': isMobilePreview }">
+          <div class="iframe-wrapper">
+            <!-- 灵动岛 (仅手机模式显示) -->
+            <div v-if="isMobilePreview" class="dynamic-island">
+              <div class="camera"></div>
+            </div>
+            
+            <iframe 
+              class="preview-iframe" 
+              sandbox="allow-scripts" 
+              :srcdoc="finalPreviewContent"
+            ></iframe>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1123,6 +1301,68 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .preview-iframe { width: 100%; height: 100%; border: none; background: #fff; }
 
+/* 预览区域内容容器 */
+.preview-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+/* iframe 包装器 */
+.iframe-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+/* 手机模式下的样式 (模拟 iPhone 16 Pro) */
+.preview-container.mobile-mode {
+  padding: 40px;
+  background: var(--panel); /* 稍深的背景以突出手机框 */
+}
+
+.preview-container.mobile-mode .iframe-wrapper {
+  width: 402px; /* iPhone 16 Pro viewport width */
+  height: 874px; /* iPhone 16 Pro viewport height */
+  max-height: 90vh; /* 防止超出屏幕 */
+  border: 12px solid #1f1f1f; /* 边框/黑边 */
+  border-radius: 56px; /* 外圆角 */
+  box-shadow: 
+    0 0 0 2px #333, /* 外边框细节 */
+    0 20px 40px rgba(0,0,0,0.4); /* 阴影 */
+  overflow: hidden;
+  background: #000;
+  flex-shrink: 0;
+}
+
+/* 手机模式下的 iframe */
+.preview-container.mobile-mode .preview-iframe {
+  border-radius: 44px; /* 内圆角 */
+  background: #fff;
+  width: 100%;
+  height: 100%;
+}
+
+/* 灵动岛 */
+.dynamic-island {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 35px;
+  background: #000;
+  border-radius: 20px;
+  z-index: 100;
+  pointer-events: none;
+  transition: all 0.3s;
+}
+
 /* 模态框通用 - 玻璃拟态重构 */
 .modal-mask { 
   position: fixed; inset: 0; 
@@ -1230,6 +1470,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .markdown .code-block { margin: 16px 0; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; box-shadow: var(--shadow-sm); }
 .markdown .code-block-header { background: var(--panel); padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; }
 .markdown .code-language { font-size: 12px; font-weight: 700; color: var(--muted); }
+
+/* 预览打开时（不仅仅是流式输出），对应的代码块（折叠状态）禁止展开，且禁用展开按钮 */
+/* 使用 .preview-source-message 标识当前预览内容来源的消息 */
+.preview-source-message .code-block.collapsed .code-toggle-btn {
+  pointer-events: none;
+  display: none;
+  cursor: not-allowed;
+}
+
+/* 预览模式切换按钮禁用状态 */
+.mode-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* 暗黑模式微调 - 已移除，使用全局变量控制 */
 
