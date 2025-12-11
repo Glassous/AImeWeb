@@ -285,7 +285,7 @@ function closeModal() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  group: true; /* for hover states */
+/* for hover states */
 }
 
 .history-item:hover { background: var(--hover); }
