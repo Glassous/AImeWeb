@@ -53,10 +53,11 @@ const hideSidebar = () => route.meta.hideSidebar === true
 .layout {
   display: grid;
   grid-template-columns: var(--sidebar-w, 280px) 1fr;
-  transition: grid-template-columns .25s ease;
+  transition: grid-template-columns 0.4s cubic-bezier(0.2, 0, 0, 1), background-color 0.3s ease;
   height: 100vh;
   background: var(--bg);
   color: var(--text);
+  overflow: hidden; /* 防止整体滚动 */
 }
 .main-col {
   /* 关键：允许内部设置 overflow 的子元素滚动，而不是整体页面变长 */
@@ -65,13 +66,22 @@ const hideSidebar = () => route.meta.hideSidebar === true
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  background: var(--bg-secondary); /* 稍微区分侧边栏和主区域 */
+  transition: background-color 0.3s ease;
 }
 .layout.mobile {
   grid-template-columns: 1fr; /* 主区域占满，侧边栏改为覆盖 */
 }
 .overlay {
   position: fixed; inset: 0; background: var(--mask); z-index: 5;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 </style>

@@ -2,221 +2,268 @@
 @import 'katex/dist/katex.min.css';
 
 :root {
-  /* 初始为浅色，实际由 data-theme 控制 */
-  --bg: #fff;
-  --text: #222;
-  --muted: #767678;
-  --border: #e5e5e6;
-  --subtle: #f7f7f8;
-  --hover: #f2f2f3;
-  --btn-bg: #fff;
-  --btn-border: #d9d9da;
-  --bubble-user-bg: #e9eefc;
-  --bubble-ai-bg: transparent;
-  --error-bg: #ffe7e7;
-  --mask: rgba(0,0,0,0.15);
-  --shadow: 0 10px 24px rgba(0,0,0,0.12);
-  --modal-bg: #ffffff; /* 纯白弹窗背景（浅色） */
-  /* 主题强调色 */
-  --primary: #3b82f6;   /* 亮蓝，用于主按钮背景 */
-  --accent: #6b4fd3;    /* 高档紫（皇家紫），用于导出等强调 */
-  --success: #2bb673;   /* 高档绿（翡翠绿），用于导入/成功 */
-  /* 代码主题（浅色） */
-  --code-bg: var(--btn-bg);
-  --code-border: var(--btn-border);
-  --code-text: var(--text);
-  --code-keyword: #d73a49;
-  --code-string: #032f62;
-  --code-comment: #6a737d;
-  --code-number: #005cc5;
-  --code-title: #6f42c1;
-  --code-function: #005cc5;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-}
+  /* 基础圆角系统 - 更加圆润 */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 9999px;
 
-/* 统一盒模型，防止元素宽度因 padding/border 溢出 */
-*, *::before, *::after { box-sizing: border-box; }
+  /* 阴影系统 - 更柔和细腻 */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --shadow-float: 0 24px 48px -12px rgba(0, 0, 0, 0.18); /* 浮动组件（如模态框） */
+
+  /* 模糊效果 */
+  --blur-sm: blur(4px);
+  --blur-md: blur(8px);
+  --blur-lg: blur(16px);
+  --backdrop-bg: rgba(255, 255, 255, 0.8); /* 玻璃拟态背景 */
+
+  /* 浅色模式配色 */
+  --bg: #ffffff;
+  --bg-sidebar: #f9fafb; /* 极淡的灰，区分主内容 */
+  --bg-card: #ffffff;
+  --bg-input: #f3f4f6;
+  
+  --text: #111827;       /* 接近纯黑 */
+  --text-secondary: #4b5563;
+  --text-tertiary: #9ca3af;
+  
+  --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  
+  --hover: #f3f4f6;
+  --active: #e5e7eb;
+
+  --btn-bg: #ffffff;
+  --btn-border: #e5e7eb;
+  --btn-text: #374151;
+  
+  --bubble-user-bg: #f3f4f6; /* 浅灰色气泡 */
+  --bubble-user-text: #111827;
+  --bubble-ai-bg: transparent;
+  --bubble-ai-text: #111827;
+
+  --error-bg: #fef2f2;
+  --error-text: #ef4444;
+  --error-border: #fee2e2;
+
+  --mask: rgba(0, 0, 0, 0.2);
+  
+  /* 强调色 */
+  --primary: #2563eb;    /* 鲜艳的蓝 */
+  --primary-hover: #1d4ed8;
+  --primary-light: #eff6ff;
+  --on-primary: #ffffff;
+
+  /* 代码高亮相关 */
+  --code-bg: #f9fafb;
+  --code-border: #e5e7eb;
+  --code-text: #24292f;
+  
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+}
 
 :root[data-theme='dark'] {
-  --bg: #121212;
-  --text: #eaeaea;
-  --muted: #a1a1a1;
-  --border: #2a2a2a;
-  --subtle: #0f0f10;
-  --hover: #1e1e1f;
-  --btn-bg: #1a1a1b;
-  --btn-border: #333;
-  --bubble-user-bg: #1b2a4a;
+  /* 深色模式配色 */
+  --bg: #09090b;         /* 极深灰，非纯黑，更有质感 */
+  --bg-sidebar: #000000; /* 侧边栏纯黑，增加层次 */
+  --bg-card: #18181b;
+  --bg-input: #27272a;
+
+  --text: #ededef;
+  --text-secondary: #a1a1aa;
+  --text-tertiary: #71717a;
+
+  --border: #27272a;
+  --border-hover: #3f3f46;
+
+  --hover: #27272a;
+  --active: #3f3f46;
+
+  --btn-bg: #18181b;
+  --btn-border: #27272a;
+  --btn-text: #e4e4e7;
+
+  --bubble-user-bg: #27272a;
+  --bubble-user-text: #ffffff;
   --bubble-ai-bg: transparent;
-  --error-bg: #3b1f1f;
-  --mask: rgba(0,0,0,0.35);
-  --shadow: 0 10px 24px rgba(0,0,0,0.35);
-  --modal-bg: #000000; /* 纯黑弹窗背景（深色） */
-  /* 深色模式下的强调色（保持对比与可读性） */
-  --primary: #60a5fa;   /* 稍微提亮的蓝 */
-  --accent: #8f74ff;    /* 深色模式下的高档紫（略提亮） */
-  --success: #3fd79a;   /* 深色模式下的高档绿（略提亮） */
-  /* 代码主题（深色） */
-  --code-bg: var(--btn-bg);
-  --code-border: var(--btn-border);
-  --code-text: var(--text);
-  --code-keyword: #ff7b72;
-  --code-string: #a5d6ff;
-  --code-comment: #8b949e;
-  --code-number: #79c0ff;
-  --code-title: #d2a8ff;
-  --code-function: #79c0ff;
+  --bubble-ai-text: #e4e4e7;
+
+  --error-bg: #450a0a;
+  --error-text: #f87171;
+  --error-border: #7f1d1d;
+
+  --mask: rgba(0, 0, 0, 0.6);
+  --backdrop-bg: rgba(9, 9, 11, 0.75);
+
+  --primary: #3b82f6;
+  --primary-hover: #60a5fa;
+  --primary-light: rgba(59, 130, 246, 0.15);
+  --on-primary: #ffffff;
+
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow-float: 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+
+  --code-bg: #111113;
+  --code-border: #27272a;
+  --code-text: #e6edf3;
 }
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body, #app { height: 100%; }
-body { margin: 0; color: var(--text); background: var(--bg); overflow-x: hidden; }
+body { 
+  margin: 0; 
+  color: var(--text); 
+  background: var(--bg); 
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased; /* 字体抗锯齿 */
+  -moz-osx-font-smoothing: grayscale;
+}
 
-button { font-family: inherit; }
-textarea { font-family: inherit; }
+button, input, textarea, select { 
+  font-family: inherit; 
+  font-size: inherit;
+  outline: none;
+}
 
-/* 通用滚动条样式，贴近 ChatGPT */
-* { scrollbar-width: thin; }
-*::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+button:focus-visible, 
+input:focus-visible, 
+textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 
-/* Markdown 代码块（全局样式，确保 v-html 动态内容可用） */
-.markdown pre {
-  /* 基础样式，会被 .code-block 内部样式覆盖 */
+/* 现代化滚动条 */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background-color: transparent; border-radius: var(--radius-full); }
+*:hover::-webkit-scrollbar-thumb { background-color: var(--border); }
+*::-webkit-scrollbar-thumb:hover { background-color: var(--text-tertiary); }
+
+
+/* Markdown 样式优化 */
+.markdown {
+  line-height: 1.7;
+  font-size: 16px;
+}
+
+.markdown p { margin: 0 0 1.2em; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { 
+  font-weight: 600; 
+  margin: 1.5em 0 0.8em; 
+  line-height: 1.3;
+}
+.markdown ul, .markdown ol { padding-left: 1.5em; margin-bottom: 1.2em; }
+.markdown li { margin-bottom: 0.4em; }
+
+/* 代码块容器 */
+.markdown .code-block {
+  margin: 1.5em 0;
+  border-radius: var(--radius-md);
   background: var(--code-bg);
   border: 1px solid var(--code-border);
-  border-radius: 8px;
-  padding: 10px;
-  overflow: auto;
-  margin: 0 0 10px;
-}
-.markdown pre code { border: none; padding: 0; background: transparent; font-size: 0.9em; display: block; }
-.markdown code { color: var(--code-text); }
-
-/* 新版代码块卡片样式 */
-.markdown .code-block {
-  margin: 12px 0;
-  border-radius: 8px;
-  background: var(--btn-bg);
-  border: 1px solid var(--btn-border);
   overflow: hidden;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.2s;
 }
 
-/* 隐藏旧的 pre 样式（当在 code-block 内时） */
-.markdown .code-block pre {
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
+.markdown .code-block:hover {
+  border-color: var(--border-hover);
 }
 
-/* Header */
 .markdown .code-block-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--hover);
-  border-bottom: 1px solid var(--btn-border);
-  user-select: none;
-}
-
-.markdown .header-left,
-.markdown .header-right {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(0,0,0,0.02);
+  border-bottom: 1px solid var(--code-border);
+  font-size: 13px;
 }
 
 .markdown .code-language {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
 }
 
-/* Buttons */
-.markdown .code-btn {
-  display: inline-flex;
+.markdown .code-copy-btn {
+  display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--muted);
+  border: none;
+  color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.2s ease;
-  line-height: 1;
+  transition: all 0.2s;
 }
-
-.markdown .code-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.markdown .code-btn:hover {
-  background: var(--btn-bg);
+.markdown .code-copy-btn:hover {
+  background: var(--hover);
   color: var(--text);
-  border-color: var(--btn-border);
 }
 
-.markdown .code-btn.active {
-  background: var(--btn-bg);
-  color: var(--primary);
-  border-color: var(--btn-border);
-  font-weight: 500;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-
-/* Copy Button */
-.markdown .code-copy-btn {
-  padding: 4px;
-  border: 1px solid var(--btn-border);
-  background: var(--btn-bg);
-  color: var(--text);
-  margin-left: 4px;
-}
-
-/* Code Body (Content) */
-.markdown .code-body {
-  display: block;
-  width: 100%;
+.markdown pre {
+  margin: 0;
+  padding: 16px;
   overflow-x: auto;
+  background: transparent !important; /* 覆盖可能得默认背景 */
+  border: none !important;
 }
 
-.markdown .code-block.collapsed .code-body {
-  display: none;
+.markdown code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Roboto Mono', monospace;
+  font-size: 0.9em;
 }
 
-/* Toggle Button Animation */
-.markdown .code-toggle-btn svg {
-  transition: transform 0.2s ease;
-  transform: rotate(180deg); /* Default (Expanded) -> Point Up */
+/* 行内代码 */
+.markdown :not(pre) > code {
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  background: var(--hover);
+  color: var(--primary);
+  font-size: 0.85em;
+  font-weight: 500;
 }
 
-.markdown .code-block.collapsed .code-toggle-btn svg {
-  transform: rotate(0deg); /* Collapsed -> Point Down */
+/* 链接样式 */
+.markdown a {
+  color: var(--primary);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.markdown a:hover {
+  border-bottom-color: var(--primary);
 }
 
-/* HTML Preview Content (for Iframe body or legacy) */
-.markdown .html-preview {
-  font-family: sans-serif;
-  line-height: 1.5;
+/* 引用块 */
+.markdown blockquote {
+  border-left: 4px solid var(--border);
+  margin: 0 0 1.2em;
+  padding-left: 1em;
+  color: var(--text-secondary);
+  font-style: italic;
 }
-.markdown .html-preview img {
+
+/* 图片 */
+.markdown img {
   max-width: 100%;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
 }
-
-/* highlight.js 颜色适配到主题变量 */
-.hljs { color: var(--code-text); background: transparent; }
-.hljs-comment, .hljs-quote { color: var(--code-comment); }
-.hljs-string, .hljs-meta .hljs-string { color: var(--code-string); }
-.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet { color: var(--code-number); }
-.hljs-keyword, .hljs-selector-tag, .hljs-type, .hljs-title, .hljs-section, .hljs-name { color: var(--code-keyword); }
-.hljs-attr, .hljs-attribute { color: var(--code-function); }
-.hljs-function .hljs-title, .hljs-title.function_, .hljs-title.class_ { color: var(--code-title); }
-
-.markdown .katex { color: var(--text); max-width: 100%; }
-.markdown .katex-display { max-width: 100%; overflow-x: auto; }
