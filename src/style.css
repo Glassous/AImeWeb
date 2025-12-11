@@ -1,4 +1,3 @@
-@import 'highlight.js/styles/github.css';
 @import 'katex/dist/katex.min.css';
 
 :root {
@@ -66,6 +65,9 @@
   --code-border: #e5e7eb;
   --code-text: #24292f;
   
+  --panel: rgba(255, 255, 255, 0.8);
+  --panel-border: rgba(255, 255, 255, 0.6);
+  
   font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
 }
 
@@ -116,6 +118,9 @@
   --code-bg: #111113;
   --code-border: #27272a;
   --code-text: #e6edf3;
+  
+  --panel: rgba(24, 24, 27, 0.8);
+  --panel-border: rgba(39, 39, 42, 0.6);
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -175,34 +180,45 @@ textarea:focus-visible {
   border: 1px solid var(--code-border);
   overflow: hidden;
   box-shadow: var(--shadow-sm);
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
 
 .markdown .code-block:hover {
   border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
 }
 
 .markdown .code-block-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  background: rgba(0,0,0,0.02);
+  padding: 10px 16px;
+  background: var(--bg-input); /* 使用输入框背景色，更协调 */
   border-bottom: 1px solid var(--code-border);
   font-size: 13px;
+  user-select: none;
 }
 
 .markdown .code-language {
-  font-weight: 500;
+  font-weight: 700;
   color: var(--text-secondary);
   text-transform: uppercase;
-  font-size: 0.75rem;
+  font-size: 0.8rem;
   letter-spacing: 0.05em;
+  display: flex; align-items: center; gap: 6px;
 }
 
-.markdown .code-copy-btn {
+.markdown .header-right {
   display: flex;
   align-items: center;
+  gap: 8px;
+}
+
+/* 通用代码块按钮 */
+.markdown .code-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   padding: 4px 8px;
   border-radius: var(--radius-sm);
@@ -212,10 +228,39 @@ textarea:focus-visible {
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
+  line-height: 1;
 }
-.markdown .code-copy-btn:hover {
+
+.markdown .code-btn:hover {
   background: var(--hover);
   color: var(--text);
+  transform: translateY(-1px);
+}
+
+.markdown .code-btn svg {
+  width: 14px; height: 14px;
+}
+
+/* 折叠/展开动画 */
+.markdown .code-toggle-btn svg {
+  transition: transform 0.3s ease;
+}
+.markdown .code-block.collapsed .code-toggle-btn svg {
+  transform: rotate(-180deg);
+}
+.markdown .code-block.collapsed .code-body {
+  display: none;
+}
+.markdown .code-block.collapsed {
+  border-bottom-width: 1px;
+}
+
+.markdown .code-body {
+  animation: expandCode 0.3s ease-out;
+}
+@keyframes expandCode {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .markdown pre {
@@ -239,6 +284,7 @@ textarea:focus-visible {
   color: var(--primary);
   font-size: 0.85em;
   font-weight: 500;
+  font-family: inherit; /* 行内代码跟随正文字体，或保留等宽取决于喜好 */
 }
 
 /* 链接样式 */
@@ -254,9 +300,11 @@ textarea:focus-visible {
 
 /* 引用块 */
 .markdown blockquote {
-  border-left: 4px solid var(--border);
+  border-left: 4px solid var(--primary);
+  background: var(--hover);
   margin: 0 0 1.2em;
-  padding-left: 1em;
+  padding: 12px 16px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   color: var(--text-secondary);
   font-style: italic;
 }
@@ -266,4 +314,34 @@ textarea:focus-visible {
   max-width: 100%;
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
+  transition: transform 0.3s;
 }
+.markdown img:hover {
+  transform: scale(1.01);
+}
+
+/* Highlight.js 自定义主题 (适配 CSS 变量) */
+.hljs { display: block; overflow-x: auto; padding: 0.5em; background: transparent; color: var(--code-text); }
+.hljs-comment, .hljs-quote { color: var(--text-tertiary); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-subst { color: var(--primary); font-weight: bold; }
+.hljs-number, .hljs-literal, .hljs-variable, .hljs-template-variable, .hljs-tag .hljs-attr { color: #059669; } /* Green-600 */
+.hljs-string, .hljs-doctag { color: #d97706; } /* Amber-600 */
+.hljs-title, .hljs-section, .hljs-selector-id { color: #7c3aed; font-weight: bold; } /* Violet-600 */
+.hljs-type, .hljs-class .hljs-title { color: #db2777; font-weight: bold; } /* Pink-600 */
+.hljs-tag, .hljs-name, .hljs-attribute { color: var(--primary); font-weight: normal; }
+.hljs-regexp, .hljs-link { color: #db2777; }
+.hljs-symbol, .hljs-bullet { color: #d97706; }
+.hljs-built_in, .hljs-builtin-name { color: #0284c7; } /* Sky-600 */
+.hljs-meta { color: var(--text-tertiary); }
+.hljs-deletion { background: #fef2f2; color: #dc2626; }
+.hljs-addition { background: #f0fdf4; color: #16a34a; }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: bold; }
+
+:root[data-theme='dark'] .hljs-number, :root[data-theme='dark'] .hljs-literal, :root[data-theme='dark'] .hljs-variable, :root[data-theme='dark'] .hljs-template-variable, :root[data-theme='dark'] .hljs-tag .hljs-attr { color: #34d399; } /* Emerald-400 */
+:root[data-theme='dark'] .hljs-string, :root[data-theme='dark'] .hljs-doctag { color: #fbbf24; } /* Amber-400 */
+:root[data-theme='dark'] .hljs-title, :root[data-theme='dark'] .hljs-section, :root[data-theme='dark'] .hljs-selector-id { color: #a78bfa; } /* Violet-400 */
+:root[data-theme='dark'] .hljs-type, :root[data-theme='dark'] .hljs-class .hljs-title { color: #f472b6; } /* Pink-400 */
+:root[data-theme='dark'] .hljs-built_in, :root[data-theme='dark'] .hljs-builtin-name { color: #38bdf8; } /* Sky-400 */
+:root[data-theme='dark'] .hljs-deletion { background: #450a0a; color: #f87171; }
+:root[data-theme='dark'] .hljs-addition { background: #052e16; color: #4ade80; }

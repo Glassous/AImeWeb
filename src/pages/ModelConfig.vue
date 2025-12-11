@@ -124,6 +124,7 @@
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { modelConfig, addGroup, updateGroup, removeGroup, addModel, updateModel, removeModel, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
+import { toastStore } from '../store/toast'
 
 
 const router = useRouter()
@@ -156,8 +157,10 @@ function closeGroupModal() { showGroupModal.value = false }
 function submitGroup() {
   if (editingGroup.value) {
     updateGroup(editingGroup.value, { ...groupForm })
+    toastStore.success('模型组已更新')
   } else {
     addGroup({ ...groupForm })
+    toastStore.success('模型组已添加')
   }
   showGroupModal.value = false
 }
@@ -186,9 +189,11 @@ function submitModel() {
   if (!modelForm.groupId) return
   if (editingModel.value) {
     updateModel(editingModel.value, { ...modelForm })
+    toastStore.success('模型已更新')
   } else {
     const created = addModel({ ...modelForm })
     if (!cfg.selectedModelId) setSelectedModel(created.id)
+    toastStore.success('模型已添加')
   }
   showModelModal.value = false
 }
@@ -215,8 +220,10 @@ function closeConfirm() { showConfirm.value = false }
 function doConfirmDelete() {
   if (confirmKind.value === 'group') {
     removeGroup(confirmId.value)
+    toastStore.success('模型组已删除')
   } else if (confirmKind.value === 'model') {
     removeModel(confirmId.value)
+    toastStore.success('模型已删除')
   }
   showConfirm.value = false
 }
@@ -257,7 +264,7 @@ function doConfirmDelete() {
 /* Group Card */
 .group-card { 
   padding: 20px 24px; 
-  border: 1px solid var(--border); 
+  border: 1px solid var(--panel-border); 
   border-radius: var(--radius-lg); 
   background: var(--panel); 
   box-shadow: var(--shadow-sm); 
@@ -341,7 +348,7 @@ function doConfirmDelete() {
   background: var(--panel); 
   color: var(--text); 
   box-shadow: var(--shadow-float); 
-  border: 1px solid var(--border); 
+  border: 1px solid var(--panel-border); 
   padding: 24px; 
   overflow: hidden; 
   animation: slideUpFade 0.3s cubic-bezier(0.2, 0, 0, 1);

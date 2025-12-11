@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { chatStore } from '../store/chat'
+import { toastStore } from '../store/toast'
 import { reply as aiReply, replyStream, replyConversation, type ConversationMessage } from '../api/openai'
 import { themeStore } from '../store/theme'
 import { modelConfig, getModelsByGroup, setSelectedModel } from '../store/modelConfig'
@@ -27,6 +28,11 @@ const previewCodeId = ref<string | null>(null)
 const previewCodeContent = ref<string>('')
 const previewCodeLanguage = ref<string>('')
 const previewMode = ref<'code' | 'preview'>('code')
+
+// 切换对话时自动关闭预览
+watch(() => activeChat.value?.id, () => {
+  isPreviewOpen.value = false
+})
 
 // 监听预览模式切换，重新高亮代码
 watch(previewMode, (newMode) => {
@@ -96,6 +102,31 @@ function closeCodePreview() {
   previewCodeId.value = null
 }
 
+function refreshPreview() {
+  const iframe = document.querySelector('.preview-iframe') as HTMLIFrameElement | null
+  if (iframe) {
+    // 重新赋值 srcdoc 以刷新
+    const content = iframe.srcdoc
+    iframe.srcdoc = ''
+    setTimeout(() => {
+      iframe.srcdoc = content
+    }, 10)
+  }
+}
+
+function downloadHtml() {
+  const blob = new Blob([previewCodeContent.value], { type: 'text/html' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'preview.html'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  showToast('已开始下载')
+}
+
 // 高亮预览区域的代码
 function highlightPreviewCode() {
   if (!isPreviewOpen.value || previewMode.value !== 'code') return
@@ -108,12 +139,8 @@ function highlightPreviewCode() {
 }
 
 // 复制提示（Toast）
-const showCopyToast = ref(false)
-const copyToastText = ref('已复制')
-function showToast(msg: string, timeout = 1500) {
-  copyToastText.value = msg
-  showCopyToast.value = true
-  window.setTimeout(() => { showCopyToast.value = false }, timeout)
+function showToast(msg: string) {
+  toastStore.success(msg)
 }
 
 // 编辑并重新发送弹窗状态
@@ -508,8 +535,10 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 
       <div class="scroll" ref="messagesEl">
         <div class="messages">
-          <div v-if="!activeChat || activeChat.messages.length === 0" class="empty">
-            有什么可以帮忙的？
+          <div v-if="!activeChat || activeChat.messages.length === 0" class="empty-container">
+            <div class="empty-content">
+              <h2>有什么可以帮忙的？</h2>
+            </div>
           </div>
           <div v-else>
             <div
@@ -560,34 +589,23 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
       </div>
       </div>
 
-      <div v-if="showCopyToast" class="toast-layer" aria-live="polite">
-        <div class="toast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="12" cy="12" r="9" stroke="#16a34a" stroke-width="2" fill="none"/>
-            <path d="M7 12l3 3 7-7" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
-          <span>{{ copyToastText }}</span>
-        </div>
-      </div>
-
-      <footer class="inputbar">
+      <footer class="inputbar" :class="{ 'centered': !activeChat || activeChat.messages.length === 0 }">
         <textarea
           v-model="inputText"
           class="input"
-          placeholder="输入消息，按下发送"
+          placeholder="输入消息..."
           rows="1"
           @keydown.enter.exact.prevent="!isGenerating && sendMessage()"
         ></textarea>
-        <button class="send-btn" :disabled="isGenerating" @click="sendMessage">
-          <span v-if="!isGenerating">发送</span>
-          <span class="loading" v-else>
-            <svg class="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" opacity="0.25"/>
-              <path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <transition name="scale-fade">
+          <button v-show="inputText.trim().length > 0 || isGenerating" class="send-btn" :disabled="isGenerating" @click="sendMessage">
+            <svg v-if="!isGenerating" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22 2L11 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
-            正在回复…
-          </span>
-        </button>
+            <div v-else class="loading-spinner"></div>
+          </button>
+        </transition>
       </footer>
 
       <div v-if="showModelModal" class="modal-mask" @click.self="closeModelSelector">
@@ -660,6 +678,29 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
             @click="previewMode = 'preview'"
           >
             预览
+          </button>
+        </div>
+        
+        <!-- 操作按钮组 -->
+        <div class="preview-actions-group">
+          <button v-if="previewMode === 'preview'" class="action-btn" @click="refreshPreview" title="刷新">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M23 4v6h-6M1 20v-6h6" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button class="action-btn" @click="copy(previewCodeContent)" title="复制">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+          </button>
+          <button class="action-btn" @click="downloadHtml" title="下载">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
           </button>
         </div>
         
@@ -754,15 +795,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .messages { padding: 0 24px; max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
 
-.empty { 
-  color: var(--muted); 
-  text-align: center; 
-  margin-top: 25vh; 
-  font-size: 1.5rem;
-  font-weight: 600;
-  opacity: 0.6;
-  letter-spacing: 1px;
-}
+
 
 /* 消息条目 */
 .msg { width: 100%; display: flex; flex-direction: column; animation: fadeIn 0.3s ease-out; }
@@ -828,21 +861,57 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: 28px;
   box-shadow: var(--shadow-float);
   backdrop-filter: var(--blur-lg);
   -webkit-backdrop-filter: var(--blur-lg);
-  transition: all 0.3s ease;
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-.inputbar:focus-within {
+.inputbar.centered {
+  bottom: 50%;
+  transform: translate(-50%, 50%);
+  width: min(640px, calc(100% - 48px));
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  border-color: rgba(0,0,0,0.05);
+}
+
+.empty-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.empty-content {
+  width: min(640px, calc(100% - 48px));
+  text-align: left;
+  margin-bottom: 180px; /* Space for the centered input bar */
+  padding-left: 20px;
+}
+
+.empty-content h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  opacity: 0.8;
+  letter-spacing: -0.02em;
+}
+
+.inputbar:not(.centered):focus-within {
   border-color: var(--primary);
   box-shadow: var(--shadow-xl);
   transform: translateX(-50%) translateY(-2px);
 }
 
 .input {
-  flex: 1; padding: 8px 4px; border: none; 
+  flex: 1; padding: 10px 12px; border: none; 
   border-radius: 0; resize: none; 
   background: transparent; color: var(--text);
   font-size: 16px; line-height: 1.5;
@@ -851,7 +920,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .input::placeholder { color: var(--muted); opacity: 0.7; }
 
 .send-btn { 
-  width: 40px; height: 40px; 
+  width: 42px; height: 42px; 
   border-radius: 50%; 
   border: none; 
   background: var(--primary); 
@@ -861,13 +930,21 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   flex-shrink: 0;
   box-shadow: var(--shadow-md);
+  padding: 0;
 }
-.send-btn:hover { transform: scale(1.1) rotate(-10deg); box-shadow: var(--shadow-lg); }
-.send-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; box-shadow: none; background: var(--muted); }
+.send-btn:hover { transform: scale(1.1); box-shadow: var(--shadow-lg); }
+.send-btn:disabled { opacity: 0.7; cursor: not-allowed; transform: none; box-shadow: none; background: var(--muted); }
 
-.loading { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-.spin { animation: spin 1s linear infinite; }
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.loading-spinner {
+  width: 18px; height: 18px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.scale-fade-enter-active, .scale-fade-leave-active { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.scale-fade-enter-from, .scale-fade-leave-to { opacity: 0; transform: scale(0.5); }
 
 /* 拖拽把手 */
 .resize-handle {
@@ -890,6 +967,17 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   display: flex; flex-direction: column;
 }
 
+@media (max-width: 768px) {
+  .code-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100% !important;
+    height: 100%;
+    z-index: 200;
+  }
+}
+
 .preview-header {
   display: flex; align-items: center; gap: 12px;
   padding: 16px 20px;
@@ -901,7 +989,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 .preview-language {
   font-size: 11px; font-weight: 700; color: var(--primary);
   text-transform: uppercase; background: rgba(var(--primary-rgb), 0.1);
-  padding: 2px 6px; border-radius: 4px; margin-right: auto;
+  padding: 2px 6px; border-radius: 4px;
 }
 
 .preview-mode-toggle {
@@ -915,6 +1003,17 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   font-size: 12px; font-weight: 600; transition: all 0.2s;
 }
 .mode-btn.active { background: var(--bg); color: var(--primary); box-shadow: var(--shadow-sm); }
+
+.preview-actions-group {
+  display: flex; gap: 4px; margin-left: auto;
+}
+.action-btn {
+  padding: 6px; border: none; background: transparent;
+  border-radius: 6px; color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.action-btn:hover { background: var(--hover); color: var(--text); }
 
 .preview-close-btn {
   width: 32px; height: 32px; border-radius: 8px;
@@ -931,7 +1030,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .preview-iframe { width: 100%; height: 100%; border: none; background: #fff; }
 
-/* 模态框通用 */
+/* 模态框通用 - 玻璃拟态重构 */
 .modal-mask { 
   position: fixed; inset: 0; 
   background: var(--mask); 
@@ -939,86 +1038,79 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   z-index: 100;
   backdrop-filter: var(--blur-sm);
   -webkit-backdrop-filter: var(--blur-sm);
-  animation: fadeIn 0.2s ease;
+  animation: fadeIn 0.3s ease;
 }
 
 .modal { 
   width: min(90vw, 520px); 
-  background: var(--bg); 
-  border: 1px solid var(--border); 
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl); 
   box-shadow: var(--shadow-float);
   overflow: hidden; 
   display: flex; flex-direction: column;
-  animation: modalPop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: modalPop 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   max-height: 80vh;
 }
 @keyframes modalPop {
-  from { opacity: 0; transform: scale(0.95) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: scale(0.9) translateY(20px); filter: blur(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
 }
 
 .modal-title { 
   font-weight: 600; font-size: 18px; 
-  padding: 20px 24px; 
+  padding: 24px; 
   border-bottom: 1px solid var(--border); 
   color: var(--text); 
+  background: transparent;
 }
-.modal-body { padding: 24px; overflow-y: auto; color: var(--text); }
+.modal-body { padding: 24px; overflow-y: auto; color: var(--text); background: transparent; }
 .modal-actions { 
   display: flex; justify-content: flex-end; gap: 12px; 
-  padding: 20px 24px; 
+  padding: 24px; 
   border-top: 1px solid var(--border); 
-  background: var(--panel);
+  background: rgba(0,0,0,0.02);
 }
 
 /* 按钮通用 */
 .btn { 
-  padding: 10px 18px; border-radius: 10px; 
+  padding: 10px 20px; border-radius: var(--radius-lg); 
   border: 1px solid var(--border); background: var(--bg); 
   cursor: pointer; color: var(--text); font-weight: 500;
   transition: all 0.2s;
 }
-.btn:hover { background: var(--hover); border-color: var(--muted); }
+.btn:hover { background: var(--hover); border-color: var(--text-tertiary); transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+
 .btn.primary { 
   background: var(--primary); color: #fff; border-color: transparent; 
   box-shadow: var(--shadow-md);
 }
-.btn.primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+.btn.primary:hover { background: var(--primary-hover); box-shadow: var(--shadow-lg); }
 
 /* 模型选择列表 */
-.group-list { display: flex; flex-direction: column; gap: 16px; }
-.group-title { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 8px; padding-left: 4px; }
-.model-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.group-list { display: flex; flex-direction: column; gap: 20px; }
+.group-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; padding-left: 4px; letter-spacing: 0.05em; }
+.model-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .model-item { 
-  padding: 10px; border-radius: 10px; 
-  border: 1px solid var(--border); background: var(--panel); 
+  padding: 12px; border-radius: var(--radius-md); 
+  border: 1px solid var(--border); background: var(--bg-input); 
   cursor: pointer; color: var(--text); text-align: center;
   transition: all 0.2s; font-size: 14px;
+  position: relative; overflow: hidden;
 }
 .model-item:hover { border-color: var(--primary); background: var(--hover); }
-.model-item.active { background: var(--primary); color: #fff; border-color: transparent; box-shadow: var(--shadow-sm); }
+.model-item.active { background: var(--primary); color: #fff; border-color: transparent; box-shadow: var(--shadow-md); }
 
 /* 编辑框 */
 .edit-input { 
   width: 100%; min-height: 140px; 
   padding: 16px; border: 1px solid var(--border); 
-  border-radius: 12px; background: var(--panel); 
+  border-radius: var(--radius-md); background: var(--bg-input); 
   color: var(--text); font-size: 15px; resize: vertical; outline: none;
-  transition: border-color 0.2s;
+  transition: all 0.2s;
 }
-.edit-input:focus { border-color: var(--primary); }
-
-/* Toast */
-.toast-layer { position: fixed; top: 30px; left: 50%; transform: translateX(-50%); z-index: 200; pointer-events: none; }
-.toast { 
-  display: flex; align-items: center; gap: 10px; 
-  padding: 10px 20px; border-radius: 50px; 
-  background: rgba(0,0,0,0.8); color: #fff; 
-  box-shadow: var(--shadow-lg); backdrop-filter: blur(8px);
-  animation: slideDown 0.3s ease;
-}
-@keyframes slideDown { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.edit-input:focus { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); background: var(--bg); }
 
 /* Markdown 样式适配 */
 .markdown p { margin: 0 0 12px; line-height: 1.7; }

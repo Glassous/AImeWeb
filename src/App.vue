@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import Sidebar from './components/Sidebar.vue'
+import ToastContainer from './components/ToastContainer.vue'
 import { RouterView, useRoute } from 'vue-router'
 
-const isSidebarOpen = ref(true)
+const isSidebarOpen = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
 
 function handleResize() {
@@ -46,7 +47,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
     </div>
     <div v-if="!hideSidebar() && isMobile && isSidebarOpen" class="overlay" @click="closeSidebar"></div>
   </div>
-  
+  <ToastContainer />
 </template>
 
 <style scoped>

@@ -52,7 +52,9 @@ function enhanceCodeBlocks(html: string): string {
     
     // 包装为 code-block，并追加控制按钮
     const wrapper = document.createElement('div')
-    wrapper.className = 'code-block collapsed'
+    // 仅 HTML/XML 相关代码默认折叠
+    const isHtml = ['html', 'xml', 'svg', 'vue'].includes((language || '').toLowerCase())
+    wrapper.className = isHtml ? 'code-block collapsed' : 'code-block'
     wrapper.setAttribute('data-code-block-id', codeBlockId)
     
     preEl.parentNode?.insertBefore(wrapper, preEl)

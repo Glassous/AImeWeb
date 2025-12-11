@@ -269,6 +269,7 @@ import { useRouter } from 'vue-router'
 import { ref, computed } from 'vue'
 import { exportGlobal, parseWithCompatibility, importGlobal, syncState, syncWithCloud } from '../store/sync'
 import { authState, login, register, resetPasswordWithAnswer, validatePassword, logout } from '../store/auth'
+import { toastStore } from '../store/toast'
 
 const router = useRouter()
 function goBack() { router.back() }
@@ -384,7 +385,7 @@ async function submitAuthForm() {
       )
       
       if (result.success) {
-        alert('密码重置成功，请重新登录')
+        toastStore.success('密码重置成功，请重新登录')
         switchAuthType('login')
         return
       }
@@ -429,14 +430,14 @@ function handleImport(e: Event) {
     try {
       const parsed = parseWithCompatibility(text)
       if (!parsed.ok) {
-        alert(parsed.error || 'JSON 解析失败')
+        toastStore.error(parsed.error || 'JSON 解析失败')
       } else {
         const res = importGlobal(parsed.data)
         if (res.ok) {
           const what = res.applied.map(x => (x === 'modelConfig' ? '模型配置' : x === 'chatHistories' ? '历史记录' : x)).join('、')
-          alert('导入成功（' + what + '）')
+          toastStore.success('导入成功（' + what + '）')
         } else {
-          alert('导入失败：' + (res.error ?? '未知错误'))
+          toastStore.error('导入失败：' + (res.error ?? '未知错误'))
         }
       }
     } finally {
@@ -533,7 +534,7 @@ defineExpose({
   justify-content: space-between;
   width: 100%;
   padding: 20px 24px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-lg);
   background: var(--panel);
   box-shadow: var(--shadow-sm);
@@ -641,7 +642,7 @@ defineExpose({
 .modal {
   width: 90%; max-width: 420px;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--panel-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-float);
   display: flex; flex-direction: column;
