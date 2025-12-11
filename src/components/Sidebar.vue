@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { chatStore } from '../store/chat'
 
-const props = defineProps<{ isMobile: boolean; isOpen: boolean }>()
+const props = defineProps<{ isMobile: boolean; isOpen: boolean; overlay?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 const router = useRouter()
 
@@ -67,7 +67,7 @@ function closeModal() {
 </script>
 
 <template>
-  <aside class="sidebar" :class="[props.isOpen ? 'open' : '']">
+  <aside class="sidebar" :class="[props.isOpen ? 'open' : '', props.overlay ? 'overlay' : '']">
     <div class="sidebar-top">
       <div class="brand">
         <div class="logo-box">AI</div>
@@ -521,6 +521,18 @@ function closeModal() {
 
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--hover); }
+
+.sidebar.overlay {
+  position: fixed;
+  left: 0; top: 0; bottom: 0;
+  z-index: 100;
+  width: 280px;
+  transform: translateX(-100%);
+  box-shadow: var(--shadow-xl);
+}
+.sidebar.overlay.open {
+  transform: translateX(0);
+}
 
 /* Mobile */
 @media (max-width: 768px) {

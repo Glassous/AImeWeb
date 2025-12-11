@@ -14,7 +14,7 @@ import { countTokens, countContextTokens } from '../utils/token'
 import { parseMessageContent } from '../utils/thinkParser'
 import ThinkingBlock from './ThinkingBlock.vue'
 
-const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void; isMobile: boolean }>()
+const props = defineProps<{ sidebarOpen: boolean; toggleSidebar: () => void; isMobile: boolean; onMenuHover?: (v: boolean) => void }>()
 // 通过计算属性引用 props，避免某些场景下直接访问 props 导致渲染不更新
 const isOpen = computed(() => !!props.sidebarOpen)
 
@@ -549,7 +549,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
     <!-- 主聊天区域 -->
     <section class="chat-main" :class="{ 'preview-open': isPreviewOpen }" :style="isPreviewOpen ? { width: `calc(100% - ${previewWidth}%)` } : {}">
       <header class="topbar">
-        <button class="menu-btn" @click="toggleSidebar">
+        <button class="menu-btn" @click="toggleSidebar" @mouseenter="props.onMenuHover?.(true)" @mouseleave="props.onMenuHover?.(false)">
           <svg v-if="!isOpen" width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
           </svg>
