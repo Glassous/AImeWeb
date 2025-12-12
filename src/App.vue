@@ -4,15 +4,15 @@ import Sidebar from './components/Sidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import StarBackground from './components/StarBackground.vue'
 import PageLoading from './components/PageLoading.vue'
-import { RouterView, useRoute, useRouter } from 'vue-router'
+import { RouterView, useRoute } from 'vue-router'
 import { themeStore } from './store/theme'
 
-const router = useRouter()
 // 默认首次为 true，后续在 mounted 中置为 false 后，router 钩子不再重新打开它
 const isPageLoading = ref(true)
 
 // 移除路由拦截，不再在每次路由切换时显示加载动画
 /*
+const router = useRouter()
 router.beforeEach((_to, _from, next) => {
   isPageLoading.value = true
   next()
