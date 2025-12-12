@@ -8,7 +8,7 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { themeStore } from './store/theme'
 
 const router = useRouter()
-const isPageLoading = ref(true)
+const isPageLoading = ref(false)
 
 router.beforeEach((_to, _from, next) => {
   isPageLoading.value = true
