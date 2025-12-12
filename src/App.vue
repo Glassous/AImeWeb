@@ -8,8 +8,11 @@ import { RouterView, useRoute, useRouter } from 'vue-router'
 import { themeStore } from './store/theme'
 
 const router = useRouter()
-const isPageLoading = ref(false)
+// 默认首次为 true，后续在 mounted 中置为 false 后，router 钩子不再重新打开它
+const isPageLoading = ref(true)
 
+// 移除路由拦截，不再在每次路由切换时显示加载动画
+/*
 router.beforeEach((_to, _from, next) => {
   isPageLoading.value = true
   next()
@@ -20,6 +23,7 @@ router.afterEach(() => {
     isPageLoading.value = false
   }, 800)
 })
+*/
 
 const isSidebarOpen = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
@@ -87,6 +91,11 @@ function handleSidebarHover(v: boolean) {
 onMounted(() => {
   window.addEventListener('resize', handleResize)
   handleResize()
+  
+  // 仅在首次挂载时关闭加载动画
+  setTimeout(() => {
+    isPageLoading.value = false
+  }, 800)
 })
 onBeforeUnmount(() => window.removeEventListener('resize', handleResize))
 
