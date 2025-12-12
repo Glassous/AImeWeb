@@ -3,8 +3,23 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import Sidebar from './components/Sidebar.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import StarBackground from './components/StarBackground.vue'
-import { RouterView, useRoute } from 'vue-router'
+import PageLoading from './components/PageLoading.vue'
+import { RouterView, useRoute, useRouter } from 'vue-router'
 import { themeStore } from './store/theme'
+
+const router = useRouter()
+const isPageLoading = ref(false)
+
+router.beforeEach((to, from, next) => {
+  isPageLoading.value = true
+  next()
+})
+
+router.afterEach(() => {
+  setTimeout(() => {
+    isPageLoading.value = false
+  }, 800)
+})
 
 const isSidebarOpen = ref(false)
 const isMobile = ref(window.innerWidth <= 768)
@@ -85,6 +100,7 @@ const hideSidebar = () => route.meta.hideSidebar === true
     :class="[(isMobile || hideSidebar()) ? 'mobile' : '']"
     :style="(!isMobile && !hideSidebar()) ? { '--sidebar-w': realSidebarOpen ? '280px' : '0px' } : {}"
   >
+    <PageLoading :loading="isPageLoading" />
     <StarBackground v-if="themeStore.activeTheme.value === 'dark'" />
     <Sidebar 
       v-if="!hideSidebar()" 

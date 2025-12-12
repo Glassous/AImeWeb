@@ -1033,6 +1033,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   backdrop-filter: var(--blur-md);
   -webkit-backdrop-filter: var(--blur-md);
   border-bottom: 1px solid var(--border);
+  animation: slideDown 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 0.1s;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-40px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .model-btn { 
@@ -1166,6 +1173,8 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   backdrop-filter: var(--blur-lg);
   -webkit-backdrop-filter: var(--blur-lg);
   transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  animation: slideUpNormal 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 0.1s;
 }
 
 .inputbar.centered {
@@ -1174,6 +1183,18 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   width: min(640px, calc(100% - 48px));
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   border-color: var(--border);
+  animation: slideUpCentered 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 0.1s;
+}
+
+@keyframes slideUpNormal {
+  from { transform: translateX(-50%) translateY(40px); opacity: 0; }
+  to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+@keyframes slideUpCentered {
+  from { transform: translate(-50%, 100px); opacity: 0; }
+  to { transform: translate(-50%, 50%); opacity: 1; }
 }
 
 .empty-container {
@@ -1194,6 +1215,13 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   text-align: left;
   margin-bottom: 180px; /* Space for the centered input bar */
   padding-left: 20px;
+  animation: fadeInScale 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 0.2s;
+}
+
+@keyframes fadeInScale {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 
 .empty-content h2 {
