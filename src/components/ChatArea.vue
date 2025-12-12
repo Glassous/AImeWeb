@@ -24,6 +24,7 @@ const inputText = ref('')
 const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
 const isGenerating = ref(false)
+const showScrollToBottomBtn = ref(false) // 控制回到底部按钮显示
 
 // 代码块预览状态管理
 const isPreviewOpen = ref(false)
@@ -663,14 +664,29 @@ const messageTokenStats = computed(() => {
   })
 })
 
+// 滚动监听处理函数
+function handleScroll() {
+  const container = messagesEl.value
+  if (!container) return
+  
+  // 计算滚动位置：当距离底部超过一定距离（比如100px）时显示按钮
+  const scrollThreshold = 100
+  const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > scrollThreshold
+  showScrollToBottomBtn.value = isScrolledUp
+}
+
 onMounted(() => {
   chatStore.startDraft()
   // 绑定点击事件，用于复制代码块
   try { messagesEl.value?.addEventListener('click', onMessageClick) } catch (_) {}
+  // 添加滚动监听，控制回到底部按钮显示
+  try { messagesEl.value?.addEventListener('scroll', handleScroll) } catch (_) {}
 })
 
 onUnmounted(() => {
   try { messagesEl.value?.removeEventListener('click', onMessageClick) } catch (_) {}
+  // 移除滚动监听
+  try { messagesEl.value?.removeEventListener('scroll', handleScroll) } catch (_) {}
 })
 
 // 切换会话或消息变动时滚到底
@@ -796,6 +812,19 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
           </div>
       </div>
       </div>
+
+      <!-- 回到底部按钮 -->
+      <button 
+        class="scroll-to-bottom-btn"
+        :class="{ 'visible': showScrollToBottomBtn }"
+        @click="scrollToBottom"
+        title="回到底部"
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M7 13L12 18L17 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 18V6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
 
       <footer class="inputbar" :class="{ 'centered': !activeChat || activeChat.messages.length === 0 }">
         <textarea
@@ -1403,6 +1432,53 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding: 24px; 
   border-top: 1px solid var(--border); 
   background: rgba(0,0,0,0.02);
+}
+
+/* 回到底部按钮 */
+.scroll-to-bottom-btn {
+  position: absolute;
+  bottom: 120px; /* 输入框上方一点点 */
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.8); /* 白色半透明 */
+  color: var(--text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  opacity: 0;
+  visibility: hidden;
+  z-index: 15;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: var(--blur-sm);
+  -webkit-backdrop-filter: var(--blur-sm);
+}
+
+.scroll-to-bottom-btn.visible {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.scroll-to-bottom-btn:hover {
+  background: rgba(255, 255, 255, 0.9); /* 悬停时更不透明 */
+  transform: translateX(-50%) translateY(-2px) scale(1.05);
+  box-shadow: var(--shadow-lg);
+}
+
+/* 深色主题适配 */
+[data-theme="dark"] .scroll-to-bottom-btn {
+  background: rgba(30, 30, 30, 0.8);
+  color: #fff;
+}
+
+[data-theme="dark"] .scroll-to-bottom-btn:hover {
+  background: rgba(40, 40, 40, 0.9);
 }
 
 /* 按钮通用 */
