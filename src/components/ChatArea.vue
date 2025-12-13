@@ -26,6 +26,37 @@ const themeMode = computed(() => themeStore.mode.value)
 const isGenerating = ref(false)
 const showScrollToBottomBtn = ref(false) // 控制回到底部按钮显示
 
+// 输入框高度控制
+const inputRef = ref<HTMLTextAreaElement | null>(null)
+const isInputExpanded = ref(false)
+const showExpandBtn = ref(false)
+
+function adjustInputHeight() {
+  const el = inputRef.value
+  if (!el) return
+  // 重置高度以获得正确的 scrollHeight
+  el.style.height = 'auto'
+  el.style.height = el.scrollHeight + 'px'
+  
+  // 当内容高度超过默认最大高度(约190px，留点余量)或当前已展开时，显示按钮
+  // 默认最大高度是 css 中设定的 200px
+  if (el.scrollHeight > 190 || isInputExpanded.value) {
+    showExpandBtn.value = true
+  } else {
+    showExpandBtn.value = false
+  }
+}
+
+function toggleInputExpand() {
+  isInputExpanded.value = !isInputExpanded.value
+  nextTick(adjustInputHeight)
+}
+
+// 监听输入内容变化，自动调整高度
+watch(inputText, () => {
+  nextTick(adjustInputHeight)
+})
+
 // 代码块预览状态管理
 const isPreviewOpen = ref(false)
 const previewWidth = ref(66) // 预览窗口宽度百分比
@@ -826,14 +857,39 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         </svg>
       </button>
 
-      <footer class="inputbar" :class="{ 'centered': !activeChat || activeChat.messages.length === 0 }">
+      <footer 
+        class="inputbar" 
+        :class="{ 
+          'centered': !activeChat || activeChat.messages.length === 0,
+          'expanded-mode': isInputExpanded 
+        }"
+      >
         <textarea
+          ref="inputRef"
           v-model="inputText"
           class="input"
           placeholder="输入消息..."
           rows="1"
           @keydown.enter.exact.prevent="!isGenerating && sendMessage()"
+          :style="{ maxHeight: isInputExpanded ? '60vh' : '200px' }"
         ></textarea>
+        
+        <transition name="fade">
+          <button 
+            v-show="showExpandBtn"
+            class="expand-btn" 
+            @click="toggleInputExpand"
+            :title="isInputExpanded ? '收起' : '展开'"
+          >
+            <svg v-if="!isInputExpanded" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+               <path d="M7 11L12 6L17 11M7 17L12 12L17 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <svg v-else width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M7 7L12 12L17 7M7 13L12 18L17 13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </transition>
+
         <transition name="scale-fade">
           <button v-show="inputText.trim().length > 0 || isGenerating" class="send-btn" :disabled="isGenerating" @click="sendMessage">
             <svg v-if="!isGenerating" width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1187,6 +1243,10 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   animation-delay: 0.1s;
 }
 
+.inputbar.expanded-mode {
+  max-width: 1200px; /* 扩展模式下更宽 */
+}
+
 @keyframes slideUpNormal {
   from { transform: translateX(-50%) translateY(40px); opacity: 0; }
   to { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -1247,6 +1307,20 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 }
 .input::placeholder { color: var(--muted); opacity: 0.7; }
 
+.expand-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+  margin-bottom: 5px; /* 微调以对齐单行输入框 */
+}
+.expand-btn:hover { background: var(--hover); color: var(--text); transform: scale(1.1); }
+
 .send-btn { 
   width: 42px; height: 42px; 
   border-radius: 50%; 
@@ -1273,6 +1347,9 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 
 .scale-fade-enter-active, .scale-fade-leave-active { transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
 .scale-fade-enter-from, .scale-fade-leave-to { opacity: 0; transform: scale(0.5); }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 
 /* 拖拽把手 */
 .resize-handle {
