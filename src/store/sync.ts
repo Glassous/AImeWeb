@@ -68,7 +68,7 @@ export function exportGlobal() {
     conversations: exportHistories(),
     modelGroups: config.modelGroups,
     models: config.models,
-    selectedModelId: '', // 不再同步选中的模型ID
+    selectedModelId: config.selectedModelId,
     apiKeys: [], // 目前没有实现API密钥管理，暂时返回空数组
     lastSynced: syncState.value.lastSynced || undefined
   }
@@ -87,7 +87,7 @@ export function importGlobal(obj: any): { ok: boolean; error?: string; applied: 
       const mcSource = {
         modelGroups: obj.modelGroups,
         models: obj.models,
-        selectedModelId: '', // 忽略云端同步的 selectedModelId
+        selectedModelId: obj.selectedModelId || '',
         exportedAt: Date.now(),
         version: 1
       }
@@ -152,7 +152,7 @@ export async function uploadToCloud(): Promise<{ ok: boolean; error?: string }> 
       p_data: backupData,
       p_sync_history: true,
       p_sync_model_config: true,
-      p_sync_selected_model: false, // 不再同步选中的模型
+      p_sync_selected_model: true,
       p_sync_api_key: true
     })
 
