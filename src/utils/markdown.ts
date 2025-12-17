@@ -53,7 +53,7 @@ function enhanceCodeBlocks(html: string): string {
     // 包装为 code-block，并追加控制按钮
     const wrapper = document.createElement('div')
     // 仅 HTML/XML 相关代码默认折叠
-    const isHtml = ['html', 'xml', 'svg', 'vue'].includes((language || '').toLowerCase())
+    const isHtml = ['html', 'xml', 'svg', 'vue', 'jsx', 'react'].includes((language || '').toLowerCase())
     wrapper.className = isHtml ? 'code-block collapsed' : 'code-block'
     wrapper.setAttribute('data-code-block-id', codeBlockId)
     
@@ -80,7 +80,7 @@ function enhanceCodeBlocks(html: string): string {
     rightGroup.className = 'header-right'
 
     // 预览按钮（仅对部分语言显示）
-    const isPreviewable = ['html', 'svg', 'xml'].includes((language || '').toLowerCase())
+    const isPreviewable = ['html', 'svg', 'xml', 'jsx', 'react'].includes((language || '').toLowerCase())
     if (isPreviewable) {
       const previewBtn = document.createElement('button')
       previewBtn.className = 'code-btn code-preview-btn'

@@ -81,6 +81,43 @@ const previewCodeId = ref<string | null>(null)
 const previewCodeContent = ref<string>('')
 const previewCodeLanguage = ref<string>('')
 const previewMode = ref<'code' | 'preview'>('code')
+const previewErrors = ref<string[]>([]) // 预览错误日志
+const showConsole = ref(false) // 是否显示控制台
+
+// 清空错误日志当预览内容变化
+watch(previewCodeContent, () => {
+  previewErrors.value = []
+  showConsole.value = false
+})
+
+// 监听 iframe 传来的错误信息
+onMounted(() => {
+  window.addEventListener('message', handleIframeMessage)
+})
+onUnmounted(() => {
+  window.removeEventListener('message', handleIframeMessage)
+})
+
+function handleIframeMessage(event: MessageEvent) {
+  if (event.data && event.data.type === 'preview-console-error') {
+    // 避免重复错误刷屏
+    const err = String(event.data.data)
+    if (!previewErrors.value.includes(err)) {
+      previewErrors.value.push(err)
+      showConsole.value = true // 收到错误自动展开控制台
+    }
+  }
+}
+
+// 插入错误到输入框
+function insertErrorToInput(err: string) {
+  const text = `I encountered an error running the code:\n\`\`\`\n${err}\n\`\`\`\nPlease fix it.`
+  if (inputText.value) {
+    inputText.value += '\n' + text
+  } else {
+    inputText.value = text
+  }
+}
 
 // 切换对话时自动关闭预览
 watch(() => activeChat.value?.id, () => {
@@ -127,9 +164,94 @@ function stopResize() {
   document.body.style.cursor = ''
 }
 
+// 构建 React 预览 HTML
+function constructReactPreview(code: string) {
+  // 简单的 React 模板，使用 jsdelivr CDN
+  // 移除 import 语句，移除 export default
+  
+  let processedCode = code
+    .replace(/^\s*import\s+.*?[\r\n]+/gm, '') // 移除 import
+    .replace(/^\s*export\s+default\s+function\s+(\w+)/m, 'function $1')
+    .replace(/^\s*export\s+default\s+function\s*\(/m, 'function App(')
+    .replace(/^\s*export\s+default\s+class\s+(\w+)/m, 'class $1')
+    .replace(/^\s*export\s+default\s+/m, '// export default ')
+
+  // 尝试检测组件名称
+  let componentName = 'App'
+  const match = code.match(/export\s+default\s+(?:function|class)?\s*(\w+)/)
+  if (match && match[1]) {
+    componentName = match[1]
+  }
+
+  // 如果没有渲染逻辑，添加渲染逻辑
+  if (!processedCode.includes('ReactDOM.createRoot') && !processedCode.includes('ReactDOM.render')) {
+      processedCode += `
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      if (typeof ${componentName} !== 'undefined') {
+        root.render(<${componentName} />);
+      } else {
+        document.getElementById('root').innerHTML = '<div style="padding: 20px; color: #666;">无法自动检测入口组件。请确保组件名为 App 或包含 export default。</div>';
+      }
+      `
+  }
+
+  // 注入错误捕获脚本
+  const errorScript = `
+    <script>
+      (function() {
+        function sendError(msg) {
+          window.parent.postMessage({ type: 'preview-console-error', data: msg }, '*');
+        }
+        window.onerror = function(msg, url, line, col, error) {
+          sendError('Error: ' + msg);
+          return false;
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+          sendError('Unhandled Promise Rejection: ' + event.reason);
+        });
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+          sendError('Console Error: ' + args.join(' '));
+          originalConsoleError.apply(console, args);
+        };
+      })();
+    <\/script>
+  `;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js" crossorigin><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js" crossorigin><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"><\/script>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    #root { height: 100vh; overflow: auto; }
+  <\/style>
+  ${errorScript}
+<\/head>
+<body>
+  <div id="root"><\/div>
+  <script type="text/babel" data-presets="env,react">
+    try {
+      const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext, createContext } = React;
+      ${processedCode}
+    } catch (err) {
+      console.error(err);
+      document.getElementById('root').innerHTML = '<div style="color:red; padding: 20px;">' + err.toString() + '</div>';
+    }
+  <\/script>
+<\/body>
+<\/html>`
+}
+
 // 检测代码是否包含 HTML 标签
 function isHtmlCode(code: string, language: string): boolean {
-  if (language.toLowerCase() === 'html') {
+  const lang = (language || '').toLowerCase()
+  if (['html', 'jsx', 'react'].includes(lang)) {
     return true
   }
   const htmlRegex = /<(!DOCTYPE|html|head|body|div|span|p|h[1-6]|script|style|link|meta|title|a|img|table|tr|td|th|ul|ol|li|input|button|form|select|option|textarea|label|br|hr|b|i|u|strong|em|code|pre|blockquote|header|footer|nav|section|article|aside|main|figure|figcaption|video|audio|canvas|svg|iframe|embed|object|param|source|track|map|area|base|col|colgroup|dd|dl|dt|fieldset|legend|optgroup|output|progress|ruby|rt|rp|samp|small|sub|sup|template|time|var|wbr)\b/i
@@ -370,8 +492,8 @@ function copy(text: string) {
 // 检测并流式更新预览内容
 function detectAndStreamPreview(fullContent: string) {
   // 简单的正则匹配最后一个 HTML 代码块
-  // 支持 html, xml, svg, vue
-  const codeBlockRegex = /```(html|xml|svg|vue)\s*([\s\S]*?)(?:```|$)/gi
+  // 支持 html, xml, svg, vue, jsx, react
+  const codeBlockRegex = /```(html|xml|svg|vue|jsx|react)\s*([\s\S]*?)(?:```|$)/gi
   let match
   let lastMatch = null
   
@@ -403,7 +525,13 @@ function detectAndStreamPreview(fullContent: string) {
 // 处理预览内容，确保包含 viewport meta 标签以支持响应式
 const finalPreviewContent = computed(() => {
   let content = previewCodeContent.value
+  const lang = (previewCodeLanguage.value || '').toLowerCase()
   if (!content) return ''
+
+  // JSX/React 预览
+  if (['jsx', 'react'].includes(lang)) {
+    return constructReactPreview(content)
+  }
   
   // 仅在预览模式且为 HTML 时注入 viewport
   if (isHtmlCode(content, previewCodeLanguage.value)) {
@@ -1005,6 +1133,18 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
 
         <!-- 操作按钮组 -->
         <div class="preview-actions-group">
+          <button 
+            v-if="previewMode === 'preview'" 
+            class="action-btn" 
+            :class="{ active: showConsole }"
+            @click="showConsole = !showConsole" 
+            title="控制台"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="4" y="17" width="16" height="2" rx="1"></rect>
+              <path d="M4 6l6 0M4 11l8 0" stroke-linecap="round"></path>
+            </svg>
+          </button>
           <button v-if="previewMode === 'preview'" class="action-btn" @click="refreshPreview" title="刷新">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M23 4v6h-6M1 20v-6h6" stroke-linecap="round" stroke-linejoin="round"/>
@@ -1037,19 +1177,53 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
         <pre v-if="previewMode === 'code'" class="preview-code"><code :class="`language-${previewCodeLanguage} hljs`">{{ previewCodeContent }}</code></pre>
         
         <!-- 预览模式 (使用 iframe 隔离) -->
-        <div v-else class="preview-container" :class="{ 'mobile-mode': isMobilePreview }">
-          <div class="iframe-wrapper">
-            <!-- 灵动岛 (仅手机模式显示) -->
-            <div v-if="isMobilePreview" class="dynamic-island">
-              <div class="camera"></div>
+        <div v-else class="preview-wrapper">
+          <div class="preview-container" :class="{ 'mobile-mode': isMobilePreview }">
+            <div class="iframe-wrapper">
+              <!-- 灵动岛 (仅手机模式显示) -->
+              <div v-if="isMobilePreview" class="dynamic-island">
+                <div class="camera"></div>
+              </div>
+              
+              <iframe 
+                class="preview-iframe" 
+                sandbox="allow-scripts" 
+                :srcdoc="finalPreviewContent"
+              ></iframe>
             </div>
-            
-            <iframe 
-              class="preview-iframe" 
-              sandbox="allow-scripts" 
-              :srcdoc="finalPreviewContent"
-            ></iframe>
           </div>
+
+          <!-- 错误控制台 -->
+          <transition name="slide-up">
+            <div v-show="showConsole" class="console-panel">
+              <div class="console-header">
+                <span class="console-title">Console ({{ previewErrors.length }})</span>
+                <div class="console-actions">
+                  <button class="console-btn" @click="insertErrorToInput(previewErrors.join('\n'))" title="Insert Error to Input">
+                    Fix
+                  </button>
+                  <button class="console-btn icon" @click="copy(previewErrors.join('\n'))" title="Copy Errors">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
+                  <button class="console-btn icon" @click="showConsole = false" title="Close">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="6" x2="6" y2="18"></line>
+                      <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="console-content">
+                <div v-if="previewErrors.length === 0" class="console-item info">No errors detected.</div>
+                <div v-for="(err, index) in previewErrors" :key="index" class="console-item error">
+                  {{ err }}
+                </div>
+              </div>
+            </div>
+          </transition>
         </div>
       </div>
     </div>
@@ -1748,4 +1922,122 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
     width: 36px; height: 36px;
   }
 }
+
+/* Preview Console */
+.preview-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  position: relative; /* Ensure absolute positioning works relative to this */
+}
+
+.preview-wrapper .preview-container {
+  flex: 1;
+  height: 100%; /* Take full height */
+  min-height: 0;
+}
+
+.console-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  max-width: 600px; /* Limit width to make it look "floating" in the corner */
+  height: 240px; /* Increased height */
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  border-top-right-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  z-index: 50;
+  box-shadow: 4px -4px 20px rgba(0,0,0,0.15);
+  backdrop-filter: blur(10px);
+}
+
+/* Mobile adaptation */
+@media (max-width: 640px) {
+  .console-panel {
+    width: 100%;
+    max-width: 100%;
+    border-top-right-radius: 0;
+    border-right: none;
+  }
+}
+
+.slide-up-enter-active, .slide-up-leave-active {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.slide-up-enter-from, .slide-up-leave-to {
+  transform: translateY(100%);
+}
+
+.console-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-header);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.console-title {
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.console-title::before {
+  content: '';
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+}
+
+.console-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.console-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+.console-btn.icon { padding: 4px; }
+.console-btn:hover { background: var(--hover); color: var(--text); border-color: var(--muted); }
+
+.console-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+  font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 12px;
+  color: #ef4444;
+  background: var(--bg);
+}
+
+.console-item {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--border);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.console-item.info { color: var(--muted); border-bottom: none; }
+.console-item:last-child { border-bottom: none; }
 </style>
