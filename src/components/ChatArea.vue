@@ -713,7 +713,7 @@ async function resend(index: number) {
   const id = chatStore.getActiveChat()?.id
   if (typeof id === 'number') {
     chatStore.removeMessageAt(id, index)
-    const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now() }
+    const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now(), modelDisplayName: selectedLabel.value }
     chatStore.insertMessageAt(id, index, placeholder)
     chatStore.persistNow()
   }
@@ -801,7 +801,7 @@ async function applyEditAndResend() {
   closeEditModal()
 
   // 追加新的 AI 占位并开始按上下文重新生成
-  const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now() }
+  const placeholder = { content: '', isError: false, isFromUser: false, timestamp: Date.now(), modelDisplayName: selectedLabel.value }
   chatStore.appendMessage(placeholder)
   const cur = chatStore.getActiveChat(); if (!cur) return
   const arr = cur.messages
