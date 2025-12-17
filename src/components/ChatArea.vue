@@ -25,6 +25,7 @@ const messagesEl = ref<HTMLDivElement | null>(null)
 const themeMode = computed(() => themeStore.mode.value)
 const isGenerating = ref(false)
 const showScrollToBottomBtn = ref(false) // 控制回到底部按钮显示
+const shouldAutoScroll = ref(true) // 控制是否自动滚到底部
 
 // 输入框高度控制
 const inputRef = ref<HTMLTextAreaElement | null>(null)
@@ -111,7 +112,7 @@ function handleIframeMessage(event: MessageEvent) {
 
 // 插入错误到输入框
 function insertErrorToInput(err: string) {
-  const text = `I encountered an error running the code:\n\`\`\`\n${err}\n\`\`\`\nPlease fix it.`
+  const text = `运行代码时遇到了错误：\n\`\`\`\n${err}\n\`\`\`\n请修复它。`
   if (inputText.value) {
     inputText.value += '\n' + text
   } else {
@@ -199,19 +200,41 @@ function constructReactPreview(code: string) {
   const errorScript = `
     <script>
       (function() {
+        function formatError(arg) {
+          if (arg instanceof Error) {
+            return arg.message + '\\n' + (arg.stack || '');
+          }
+          if (typeof arg === 'object') {
+            try {
+              return JSON.stringify(arg, null, 2);
+            } catch (e) {
+              return String(arg);
+            }
+          }
+          return String(arg);
+        }
+
         function sendError(msg) {
           window.parent.postMessage({ type: 'preview-console-error', data: msg }, '*');
         }
+
         window.onerror = function(msg, url, line, col, error) {
-          sendError('Error: ' + msg);
+          if (error) {
+            sendError('Error: ' + formatError(error));
+          } else {
+            sendError('Error: ' + msg + ' (' + url + ':' + line + ':' + col + ')');
+          }
           return false;
         };
+
         window.addEventListener('unhandledrejection', function(event) {
-          sendError('Unhandled Promise Rejection: ' + event.reason);
+          sendError('Unhandled Promise Rejection: ' + formatError(event.reason));
         });
+
         const originalConsoleError = console.error;
         console.error = function(...args) {
-          sendError('Console Error: ' + args.join(' '));
+          const formattedArgs = args.map(formatError);
+          sendError('Console Error:\\n' + formattedArgs.join(' '));
           originalConsoleError.apply(console, args);
         };
       })();
@@ -248,10 +271,99 @@ function constructReactPreview(code: string) {
 <\/html>`
 }
 
+// 构建 Vue 预览 HTML
+function constructVuePreview(code: string) {
+  // 注入错误捕获脚本
+  const errorScript = `
+    <script>
+      (function() {
+        function formatError(arg) {
+          if (arg instanceof Error) {
+            return arg.message + '\\n' + (arg.stack || '');
+          }
+          if (typeof arg === 'object') {
+            try {
+              return JSON.stringify(arg, null, 2);
+            } catch (e) {
+              return String(arg);
+            }
+          }
+          return String(arg);
+        }
+
+        function sendError(msg) {
+          window.parent.postMessage({ type: 'preview-console-error', data: msg }, '*');
+        }
+
+        window.onerror = function(msg, url, line, col, error) {
+          if (error) {
+            sendError('Error: ' + formatError(error));
+          } else {
+            sendError('Error: ' + msg + ' (' + url + ':' + line + ':' + col + ')');
+          }
+          return false;
+        };
+
+        window.addEventListener('unhandledrejection', function(event) {
+          sendError('Unhandled Promise Rejection: ' + formatError(event.reason));
+        });
+
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+          const formattedArgs = args.map(formatError);
+          sendError('Console Error:\\n' + formattedArgs.join(' '));
+          originalConsoleError.apply(console, args);
+        };
+      })();
+    <\/script>
+  `;
+
+  // 使用 encodeURIComponent 编码代码，避免任何字符转义问题
+  const encodedCode = encodeURIComponent(code);
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader/dist/vue3-sfc-loader.js"><\/script>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    #app { height: 100vh; overflow: auto; }
+  <\/style>
+  ${errorScript}
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const options = {
+      moduleCache: {
+        vue: Vue
+      },
+      async getFile(url) {
+        if (url === '/App.vue') return decodeURIComponent("${encodedCode}");
+      },
+      addStyle(textContent) {
+        const style = document.createElement('style');
+        style.textContent = textContent;
+        document.head.appendChild(style);
+      },
+    }
+    const { loadModule } = window['vue3-sfc-loader'];
+    const App = Vue.defineAsyncComponent(() => loadModule('/App.vue', options));
+    const app = Vue.createApp(App);
+    app.mount('#app');
+  <\/script>
+</body>
+</html>`
+}
+
 // 检测代码是否包含 HTML 标签
 function isHtmlCode(code: string, language: string): boolean {
   const lang = (language || '').toLowerCase()
-  if (['html', 'jsx', 'react'].includes(lang)) {
+  if (['html', 'jsx', 'react', 'vue'].includes(lang)) {
     return true
   }
   const htmlRegex = /<(!DOCTYPE|html|head|body|div|span|p|h[1-6]|script|style|link|meta|title|a|img|table|tr|td|th|ul|ol|li|input|button|form|select|option|textarea|label|br|hr|b|i|u|strong|em|code|pre|blockquote|header|footer|nav|section|article|aside|main|figure|figcaption|video|audio|canvas|svg|iframe|embed|object|param|source|track|map|area|base|col|colgroup|dd|dl|dt|fieldset|legend|optgroup|output|progress|ruby|rt|rp|samp|small|sub|sup|template|time|var|wbr)\b/i
@@ -373,10 +485,14 @@ async function handleSync() {
   }
 }
 
-function scrollToBottom() {
+function scrollToBottom(force = false) {
   nextTick(() => {
     const el = messagesEl.value
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      if (force || shouldAutoScroll.value) {
+        el.scrollTop = el.scrollHeight
+      }
+    }
   })
 }
 
@@ -392,7 +508,7 @@ function sendMessage() {
     timestamp: now,
   })
   inputText.value = ''
-  scrollToBottom()
+  scrollToBottom(true)
 
   // 先追加一个 AI 占位消息，用于流式累积内容
   const placeholder = {
@@ -403,7 +519,7 @@ function sendMessage() {
     modelDisplayName: selectedLabel.value,
   }
   chatStore.appendMessage(placeholder)
-  scrollToBottom()
+  scrollToBottom(true)
 
   // 构造完整上下文（不含刚追加的空AI占位）
   const active = chatStore.getActiveChat()
@@ -492,8 +608,8 @@ function copy(text: string) {
 // 检测并流式更新预览内容
 function detectAndStreamPreview(fullContent: string) {
   // 简单的正则匹配最后一个 HTML 代码块
-  // 支持 html, xml, svg, vue, jsx, react
-  const codeBlockRegex = /```(html|xml|svg|vue|jsx|react)\s*([\s\S]*?)(?:```|$)/gi
+  // 支持 html, vue, jsx, react
+  const codeBlockRegex = /```(html|vue|jsx|react)\s*([\s\S]*?)(?:```|$)/gi
   let match
   let lastMatch = null
   
@@ -531,6 +647,11 @@ const finalPreviewContent = computed(() => {
   // JSX/React 预览
   if (['jsx', 'react'].includes(lang)) {
     return constructReactPreview(content)
+  }
+
+  // Vue 预览
+  if (lang === 'vue') {
+    return constructVuePreview(content)
   }
   
   // 仅在预览模式且为 HTML 时注入 viewport
@@ -830,8 +951,12 @@ function handleScroll() {
   
   // 计算滚动位置：当距离底部超过一定距离（比如100px）时显示按钮
   const scrollThreshold = 100
-  const isScrolledUp = container.scrollHeight - container.scrollTop - container.clientHeight > scrollThreshold
+  const distance = container.scrollHeight - container.scrollTop - container.clientHeight
+  const isScrolledUp = distance > scrollThreshold
   showScrollToBottomBtn.value = isScrolledUp
+  
+  // 更新自动滚动状态：只有当用户在底部附近时才允许自动滚动
+  shouldAutoScroll.value = !isScrolledUp
 }
 
 onMounted(() => {
@@ -849,8 +974,8 @@ onUnmounted(() => {
 })
 
 // 切换会话或消息变动时滚到底
-watch(() => activeChat.value?.id, () => scrollToBottom())
-watch(() => activeChat.value?.messages.length, () => scrollToBottom())
+watch(() => activeChat.value?.id, () => scrollToBottom(true))
+watch(() => activeChat.value?.messages.length, () => scrollToBottom(true))
 </script>
 
 <template>
@@ -976,7 +1101,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
       <button 
         class="scroll-to-bottom-btn"
         :class="{ 'visible': showScrollToBottomBtn }"
-        @click="scrollToBottom"
+        @click="scrollToBottom(true)"
         title="回到底部"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2036,6 +2161,7 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom())
   padding: 4px 0;
   border-bottom: 1px solid var(--border);
   word-break: break-all;
+  white-space: pre-wrap;
   line-height: 1.5;
 }
 .console-item.info { color: var(--muted); border-bottom: none; }
