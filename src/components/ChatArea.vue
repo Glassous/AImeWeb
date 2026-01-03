@@ -166,7 +166,7 @@ function stopResize() {
 }
 
 // 构建 React 预览 HTML
-function constructReactPreview(code: string) {
+function constructReactPreview(code: string, isDark: boolean = false) {
   // 简单的 React 模板，使用 jsdelivr CDN
   // 移除 import 语句，移除 export default
   
@@ -241,6 +241,9 @@ function constructReactPreview(code: string) {
     <\/script>
   `;
 
+  const bg = isDark ? '#0d1117' : '#ffffff';
+  const fg = isDark ? '#c9d1d9' : '#24292f';
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -251,13 +254,33 @@ function constructReactPreview(code: string) {
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <style>
-    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${bg}; color: ${fg}; }
     #root { height: 100vh; overflow: auto; }
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: center; align-items: center; flex-direction: column;
+      z-index: 50; background-color: ${bg};
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(59, 130, 246, 0.2);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+    .loading-text { font-size: 14px; color: ${fg}; opacity: 0.7; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   <\/style>
   ${errorScript}
 <\/head>
 <body>
-  <div id="root"><\/div>
+  <div id="root">
+    <div class="loading-overlay">
+      <div class="spinner"><\/div>
+      <div class="loading-text">Loading React App...<\/div>
+    <\/div>
+  <\/div>
   <script type="text/babel" data-presets="env,react">
     try {
       const { useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext, createContext } = React;
@@ -272,7 +295,7 @@ function constructReactPreview(code: string) {
 }
 
 // 构建 Vue 预览 HTML
-function constructVuePreview(code: string) {
+function constructVuePreview(code: string, isDark: boolean = false) {
   // 注入错误捕获脚本
   const errorScript = `
     <script>
@@ -321,6 +344,9 @@ function constructVuePreview(code: string) {
   // 使用 encodeURIComponent 编码代码，避免任何字符转义问题
   const encodedCode = encodeURIComponent(code);
 
+  const bg = isDark ? '#0d1117' : '#ffffff';
+  const fg = isDark ? '#c9d1d9' : '#24292f';
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -330,13 +356,33 @@ function constructVuePreview(code: string) {
   <script src="https://cdn.jsdelivr.net/npm/vue3-sfc-loader/dist/vue3-sfc-loader.js"><\/script>
   <script src="https://cdn.tailwindcss.com"><\/script>
   <style>
-    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: ${bg}; color: ${fg}; }
     #app { height: 100vh; overflow: auto; }
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; justify-content: center; align-items: center; flex-direction: column;
+      z-index: 50; background-color: ${bg};
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid rgba(66, 184, 131, 0.2);
+      border-top-color: #42b883;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+    .loading-text { font-size: 14px; color: ${fg}; opacity: 0.7; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
   <\/style>
   ${errorScript}
-</head>
+<\/head>
 <body>
-  <div id="app"></div>
+  <div id="app">
+    <div class="loading-overlay">
+      <div class="spinner"><\/div>
+      <div class="loading-text">Loading Vue App...<\/div>
+    <\/div>
+  <\/div>
   <script>
     const options = {
       moduleCache: {
@@ -356,8 +402,8 @@ function constructVuePreview(code: string) {
     const app = Vue.createApp(App);
     app.mount('#app');
   <\/script>
-</body>
-</html>`
+<\/body>
+<\/html>`
 }
 
 // 检测代码是否包含 HTML 标签
@@ -642,16 +688,18 @@ function detectAndStreamPreview(fullContent: string) {
 const finalPreviewContent = computed(() => {
   let content = previewCodeContent.value
   const lang = (previewCodeLanguage.value || '').toLowerCase()
+  const mode = themeMode.value
+  const isDark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   if (!content) return ''
 
-  // JSX/React 预览
+  // React/JSX 预览
   if (['jsx', 'react'].includes(lang)) {
-    return constructReactPreview(content)
+    return constructReactPreview(content, isDark)
   }
 
   // Vue 预览
   if (lang === 'vue') {
-    return constructVuePreview(content)
+    return constructVuePreview(content, isDark)
   }
   
   // 仅在预览模式且为 HTML 时注入 viewport
@@ -672,6 +720,17 @@ const finalPreviewContent = computed(() => {
     // 注入简单的样式重置，确保 iframe 中无默认边距干扰全屏效果
     let resetStyle = 'body { margin: 0; padding: 0; }'
     
+    // 注入深色模式样式
+    if (isDark) {
+      resetStyle += `
+        body { background-color: #0d1117; color: #c9d1d9; }
+      `
+    } else {
+      resetStyle += `
+        body { background-color: #ffffff; color: #24292f; }
+      `
+    }
+
     // 如果是手机模拟模式，隐藏滚动条以获得更像原生 App 的体验
     if (isMobilePreview.value) {
       resetStyle += `
@@ -1324,10 +1383,10 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom(true))
               <div class="console-header">
                 <span class="console-title">Console ({{ previewErrors.length }})</span>
                 <div class="console-actions">
-                  <button class="console-btn" @click="insertErrorToInput(previewErrors.join('\n'))" title="Insert Error to Input">
+                  <button v-if="previewErrors.length > 0" class="console-btn" @click="insertErrorToInput(previewErrors.join('\n'))" title="Insert Error to Input">
                     Fix
                   </button>
-                  <button class="console-btn icon" @click="copy(previewErrors.join('\n'))" title="Copy Errors">
+                  <button v-if="previewErrors.length > 0" class="console-btn icon" @click="copy(previewErrors.join('\n'))" title="Copy Errors">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                       <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -1342,7 +1401,6 @@ watch(() => activeChat.value?.messages.length, () => scrollToBottom(true))
                 </div>
               </div>
               <div class="console-content">
-                <div v-if="previewErrors.length === 0" class="console-item info">No errors detected.</div>
                 <div v-for="(err, index) in previewErrors" :key="index" class="console-item error">
                   {{ err }}
                 </div>
